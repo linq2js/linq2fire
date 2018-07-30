@@ -4,6 +4,7 @@
 import linq from 'linq2fire';
 const db = firebase.firestore();
 
+
 const printDocs = heading => docs => {
   console.log('**********', heading.toUpperCase(), '**********');
   docs.forEach(doc => console.log(doc.id, doc.data()));
@@ -21,9 +22,8 @@ const test = async () => {
     .set(1, {
       text: 'Task 1'
     });
-
-  await // add multiple docs
-  linq(db)
+  // add multiple docs
+  await linq(db)
     .from('todos')
     .set({
       1: {
