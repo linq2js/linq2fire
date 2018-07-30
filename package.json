@@ -1,6 +1,6 @@
 {
   "name": "linq2fire",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Zero dependency. Support operators: >, <, >=, <=, =, ==, ===, <>, !=, !==",
   "main": "./dist/index.js",
   "scripts": {

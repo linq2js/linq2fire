@@ -1,11 +1,8 @@
 # Linq2Fire
-Zero dependency
-Support operators: >, <, >=, <=, =, ==, ===, <>, !=, !==
 
 ```js
 import linq from 'linq2fire';
 const db = firebase.firestore();
-
 
 const printDocs = heading => docs => {
   console.log('**********', heading.toUpperCase(), '**********');
@@ -16,7 +13,7 @@ const printDocs = heading => docs => {
 const test = async () => {
   await linq(db)
     .from('todos')
-    .removeAll();
+    .remove();
 
   // add single doc
   await linq(db)
@@ -81,8 +78,72 @@ const test = async () => {
         .get()
         .then(printDocs('Find task by id'))
     );
+
+  // support pagination
+  const pagination = linq(db)
+    .from('todos')
+    .orderBy({
+      text: 'asc'
+    })
+    .limit(1)
+    .where({
+      'text <>': 'Task 1'
+    });
+
+  await pagination
+    .get()
+    .then(printDocs('Find all tasks which has text not equal Task 1. Page 1'));
+
+  await pagination
+    .next()
+    .then(printDocs('Find all tasks which has text not equal Task 1. Page 2'));
+  await pagination
+    .next()
+    .then(printDocs('Find all tasks which has text not equal Task 1. Page 3'));
 };
 
 test();
 
 ```
+
+## References:
+
+### linq2fire(db):LinqDb
+Create a linq object to wrap db
+
+### LinqDb.from(collectionName): LinqCollection
+Create a linq object to wrap collection
+
+### LinqDb.from(collection, callback): LinqDb
+Create a linq object to wrap collection, then pass it to callback. This method is useful for chaining calls
+
+### linq2fire(collection): LinqCollection
+Create a linq object to wrap collection
+
+### LinqCollection.limit(count): LinqCollection
+Limit result set
+
+### LinqCollection.where(conditions): LinqCollection
+Filter result set by multiple conditions { text: 'abc', 'age >': 100, fieldValueMustBeIn: [1, 2, 3, 4, 5], 'field <>': 0 }
+Support operators: >, <, >=, <=, =, ==, ===, <>, !=, !==
+
+### LinqCollection.orderBy(fields): LinqCollection
+Sort result set by specified fields { field1: 'asc', field2: 'desc' }
+
+### LinqCollection.get(options): Promise
+Get all documents which is satisfied query condition
+
+### LinqCollection.next(options): Promise
+Get next result set which starts after last result set
+
+### LinqCollection.set(id, data): Promise
+Update single document of current collection which has given id
+
+### LinqCollection.set(documentList): Promise
+Update multiple documents of current collection. documentList can be Array(using index as document id) or Object (using key as document id)
+
+### LinqCollection.update(data): Promise
+Update all documents which is satisfied query condition
+
+### LinqCollection.remove(): Promise
+Remove all documents which is satisfied query condition

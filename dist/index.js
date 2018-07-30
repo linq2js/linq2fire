@@ -8,9 +8,9 @@ var _slicedToArray = function () { function sliceIterator(arr, i) { var _arr = [
 
 exports.default = create;
 
-function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
-
 function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
 
 var keyRegex = /^([^<>=]+)(<|>|<=|>=|==|=)?/;
 var specialFields = {
@@ -53,31 +53,74 @@ function create(queryable, collection) {
   var whereAnd = {};
   var whereOr = [];
   var _limit = 0;
+  var lastGet = void 0,
+      lastDocs = void 0;
+
+  function bind(callback) {
+    var q = Object.keys(whereAnd).reduce(function (queryable, key) {
+      var _keyRegex$exec = keyRegex.exec(key),
+          _keyRegex$exec2 = _slicedToArray(_keyRegex$exec, 3),
+          field = _keyRegex$exec2[1],
+          _keyRegex$exec2$ = _keyRegex$exec2[2],
+          op = _keyRegex$exec2$ === undefined ? '=' : _keyRegex$exec2$;
+
+      var value = whereAnd[key];
+      return queryable.where(translateField(field), op === '=' ? '==' : op, translateValue(field, value));
+    }, queryable);
+
+    if (whereOr.length) {
+      whereOr.forEach(function (or) {
+        create(q).where(or).bind(callback);
+      });
+    } else {
+      callback(q);
+    }
+  }
+
+  function buildQueries() {
+    var queries = [];
+    bind(function (queryable) {
+      if (_limit) {
+        queryable = queryable.limit(_limit);
+      }
+      if (_orderBy.length) {
+        queryable = _orderBy.reduce(function (queryable, order) {
+          return queryable.orderBy.apply(queryable, _toConsumableArray(order));
+        }, queryable);
+      }
+      queries.push(queryable);
+    });
+
+    return queries;
+  }
+
+  function processResults(results) {
+    var docs = {};
+    var count = 0;
+    lastDocs = results.map(function (result) {
+      return result ? result.docs[result.docs.length - 1] : undefined;
+    });
+    results.some(function (result) {
+      if (!result) return;
+      result.forEach(function (doc) {
+        if (_limit && count >= _limit) return;
+        if (!(doc.id in docs)) {
+          count++;
+        }
+        docs[doc.id] = doc;
+      });
+      return _limit && count >= _limit;
+    });
+    return Object.values(docs);
+  }
+
   return {
     limit: function limit(count) {
       _limit = count;
       return this;
     },
-    bind: function bind(callback) {
-      var q = Object.keys(whereAnd).reduce(function (queryable, key) {
-        var _keyRegex$exec = keyRegex.exec(key),
-            _keyRegex$exec2 = _slicedToArray(_keyRegex$exec, 3),
-            field = _keyRegex$exec2[1],
-            _keyRegex$exec2$ = _keyRegex$exec2[2],
-            op = _keyRegex$exec2$ === undefined ? '=' : _keyRegex$exec2$;
 
-        var value = whereAnd[key];
-        return queryable.where(translateField(field), op === '=' ? '==' : op, translateValue(field, value));
-      }, queryable);
-
-      if (whereOr.length) {
-        whereOr.forEach(function (or) {
-          create(q).where(or).bind(callback);
-        });
-      } else {
-        callback(q);
-      }
-    },
+    bind: bind,
     where: function where() {
       for (var _len = arguments.length, conditions = Array(_len), _key = 0; _key < _len; _key++) {
         conditions[_key] = arguments[_key];
@@ -128,39 +171,31 @@ function create(queryable, collection) {
       return this;
     },
 
-    get: function get(options) {
-      var _this = this;
+    get: function get() {
+      var _ref3 = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {},
+          source = _ref3.source;
 
-      return new Promise(function (resolve, reject) {
-        var promises = [];
-        _this.bind(function (queryable) {
-          if (_limit) {
-            queryable = queryable.limit(_limit);
-          }
-          if (_orderBy.length) {
-            queryable = _orderBy.reduce(function (queryable, order) {
-              return queryable.orderBy.apply(queryable, _toConsumableArray(order));
-            }, queryable);
-          }
-          promises.push(queryable.get(options));
-        });
-
-        Promise.all(promises).then(function (results) {
-          var docs = {};
-          var count = 0;
-          results.some(function (result) {
-            result.forEach(function (doc) {
-              if (_limit && count >= _limit) return;
-              if (!(doc.id in docs)) {
-                count++;
-              }
-              docs[doc.id] = doc;
-            });
-            return _limit && count >= _limit;
-          });
-          resolve(Object.values(docs));
-        }, reject);
+      var promises = buildQueries().map(function (queryable) {
+        return queryable.get(source);
       });
+      return lastGet = Promise.all(promises).then(processResults);
+    },
+    next: function next() {
+      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+      var source = options.source;
+
+      if (lastGet) {
+        return lastGet = lastGet.then(function (docs) {
+          if (!docs.length) return [];
+          var queries = buildQueries();
+          var promises = queries.map(function (queryable, index) {
+            if (!lastDocs[index]) return undefined;
+            return queryable.startAfter(lastDocs[index]).get(source);
+          });
+          return Promise.all(promises).then(processResults);
+        });
+      }
+      return this.get(options);
     },
     set: function set(id, data) {
       // create multiple document
@@ -172,8 +207,15 @@ function create(queryable, collection) {
       }
       return queryable.doc(String(id)).set(data);
     },
-    removeAll: function removeAll() {
-      this.get().then(function (docs) {
+    update: function update(data) {
+      return this.get().then(function (docs) {
+        return Promise.all(docs.map(function (doc) {
+          return doc.ref.set(data);
+        }));
+      });
+    },
+    remove: function remove() {
+      return this.get().then(function (docs) {
         return Promise.all(docs.map(function (doc) {
           return doc.ref.delete();
         }));
