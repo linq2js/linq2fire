@@ -12,12 +12,33 @@ function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr
 
 function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
 
+var keyRegex = /^([^<>=]+)(<|>|<=|>=|==|=)?/;
+var specialFields = {
+  '@id': '__name__'
+};
+
 var dbWrapper = function dbWrapper(db) {
   return {
-    from: function from(collection) {
-      return create(db.collection(collection));
+    from: function from(collection, callback) {
+      var col = create(db.collection(collection));
+      if (arguments.length < 2) {
+        return col;
+      }
+      callback(col);
+      return this;
     }
   };
+};
+
+var isNotEqualOp = function isNotEqualOp(op) {
+  return op.endsWith('<>') || op.endsWith('!=') || op.endsWith('!==');
+};
+
+var translateField = function translateField(field) {
+  return specialFields[field] || field;
+};
+var translateValue = function translateValue(field, value) {
+  return field === '@id' ? String(value) : value;
 };
 
 function create(queryable, collection) {
@@ -39,14 +60,14 @@ function create(queryable, collection) {
     },
     bind: function bind(callback) {
       var q = Object.keys(whereAnd).reduce(function (queryable, key) {
-        var _$exec = /^([^<>=]+)(<|>|<=|>=|==|=)?/.exec(key),
-            _$exec2 = _slicedToArray(_$exec, 3),
-            field = _$exec2[1],
-            _$exec2$ = _$exec2[2],
-            op = _$exec2$ === undefined ? '=' : _$exec2$;
+        var _keyRegex$exec = keyRegex.exec(key),
+            _keyRegex$exec2 = _slicedToArray(_keyRegex$exec, 3),
+            field = _keyRegex$exec2[1],
+            _keyRegex$exec2$ = _keyRegex$exec2[2],
+            op = _keyRegex$exec2$ === undefined ? '=' : _keyRegex$exec2$;
 
         var value = whereAnd[key];
-        return queryable.where(field, op === '=' ? '==' : op, value);
+        return queryable.where(translateField(field), op === '=' ? '==' : op, translateValue(field, value));
       }, queryable);
 
       if (whereOr.length) {
@@ -64,8 +85,8 @@ function create(queryable, collection) {
 
       conditions.forEach(function (condition) {
         Object.keys(condition).forEach(function (key) {
-          key = key.replace(/\s+/g, '');
           var value = condition[key];
+          key = key.replace(/\s+/g, '');
           if (key === 'or') {
             if (!(value instanceof Array)) {
               value = Object.entries(value).map(function (entry) {
@@ -74,12 +95,26 @@ function create(queryable, collection) {
             }
             whereOr.push.apply(whereOr, _toConsumableArray(value));
           } else {
+            var notEqualOp = isNotEqualOp(key);
+
             if (value instanceof Array) {
-              whereOr.push.apply(whereOr, _toConsumableArray([].map.call(value, function (value) {
-                return _defineProperty({}, key, value);
-              })));
+              if (notEqualOp) {
+                // process not in operator
+              } else {
+                whereOr.push.apply(whereOr, _toConsumableArray([].map.call(value, function (value) {
+                  return _defineProperty({}, key, value);
+                })));
+              }
             } else {
-              Object.assign(whereAnd, _defineProperty({}, key, value));
+              if (notEqualOp) {
+                var _keyRegex$exec3 = keyRegex.exec(key),
+                    _keyRegex$exec4 = _slicedToArray(_keyRegex$exec3, 2),
+                    field = _keyRegex$exec4[1];
+
+                whereOr.push(_defineProperty({}, field + '<', value), _defineProperty({}, field + '>', value));
+              } else {
+                Object.assign(whereAnd, _defineProperty({}, key, value));
+              }
             }
           }
         });
@@ -126,7 +161,31 @@ function create(queryable, collection) {
           resolve(Object.values(docs));
         }, reject);
       });
+    },
+    set: function set(id, data) {
+      // create multiple document
+      if (arguments.length === 1) {
+        var multipleDocData = id;
+        return Promise.all(Object.keys(multipleDocData).map(function (id) {
+          return queryable.doc(String(id)).set(multipleDocData[id]);
+        }));
+      }
+      return queryable.doc(String(id)).set(data);
+    },
+    removeAll: function removeAll() {
+      this.get().then(function (docs) {
+        return Promise.all(docs.map(function (doc) {
+          return doc.ref.delete();
+        }));
+      });
     }
   };
 }
+
+Object.assign(create, {
+  fields: function fields(newSpecialFields) {
+    Object.assign(specialFields, newSpecialFields);
+    return this;
+  }
+});
 //# sourceMappingURL=index.js.map

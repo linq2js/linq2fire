@@ -1,7 +1,7 @@
 {
   "name": "linq2fire",
-  "version": "1.0.1",
-  "description": "Supports OR and IN operators for firestore DB. Zero Dependency",
+  "version": "1.0.3",
+  "description": "Zero dependency. Support operators: >, <, >=, <=, =, ==, ===, <>, !=, !==",
   "main": "./dist/index.js",
   "scripts": {
     "test": "npm test"

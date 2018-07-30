@@ -1,10 +1,28 @@
+const keyRegex = /^([^<>=]+)(<|>|<=|>=|==|=)?/;
+const specialFields = {
+  '@id': '__name__'
+};
+
 const dbWrapper = db => {
   return {
-    from(collection) {
-      return create(db.collection(collection));
+    from(collection, callback) {
+      const col = create(db.collection(collection));
+      if (arguments.length < 2) {
+        return col;
+      }
+      callback(col);
+      return this;
     }
   };
 };
+
+const isNotEqualOp = op => {
+  return op.endsWith('<>') || op.endsWith('!=') || op.endsWith('!==');
+};
+
+const translateField = field => specialFields[field] || field;
+const translateValue = (field, value) =>
+  field === '@id' ? String(value) : value;
 
 export default function create(queryable, collection) {
   if (queryable.collection) {
@@ -25,9 +43,13 @@ export default function create(queryable, collection) {
     },
     bind(callback) {
       let q = Object.keys(whereAnd).reduce((queryable, key) => {
-        const [, field, op = '='] = /^([^<>=]+)(<|>|<=|>=|==|=)?/.exec(key);
+        const [, field, op = '='] = keyRegex.exec(key);
         const value = whereAnd[key];
-        return queryable.where(field, op === '=' ? '==' : op, value);
+        return queryable.where(
+          translateField(field),
+          op === '=' ? '==' : op,
+          translateValue(field, value)
+        );
       }, queryable);
 
       if (whereOr.length) {
@@ -43,8 +65,8 @@ export default function create(queryable, collection) {
     where(...conditions) {
       conditions.forEach(condition => {
         Object.keys(condition).forEach(key => {
-          key = key.replace(/\s+/g, '');
           let value = condition[key];
+          key = key.replace(/\s+/g, '');
           if (key === 'or') {
             if (!(value instanceof Array)) {
               value = Object.entries(value).map(entry => ({
@@ -53,10 +75,26 @@ export default function create(queryable, collection) {
             }
             whereOr.push(...value);
           } else {
+            const notEqualOp = isNotEqualOp(key);
+
             if (value instanceof Array) {
-              whereOr.push(...[].map.call(value, value => ({ [key]: value })));
+              if (notEqualOp) {
+                // process not in operator
+              } else {
+                whereOr.push(
+                  ...[].map.call(value, value => ({ [key]: value }))
+                );
+              }
             } else {
-              Object.assign(whereAnd, { [key]: value });
+              if (notEqualOp) {
+                const [, field] = keyRegex.exec(key);
+                whereOr.push(
+                  { [field + '<']: value },
+                  { [field + '>']: value }
+                );
+              } else {
+                Object.assign(whereAnd, { [key]: value });
+              }
             }
           }
         });
@@ -101,6 +139,34 @@ export default function create(queryable, collection) {
           resolve(Object.values(docs));
         }, reject);
       });
+    },
+    set(id, data) {
+      // create multiple document
+      if (arguments.length === 1) {
+        const multipleDocData = id;
+        return Promise.all(
+          Object.keys(multipleDocData).map(id =>
+            queryable.doc(String(id)).set(multipleDocData[id])
+          )
+        );
+      }
+      return queryable.doc(String(id)).set(data);
+    },
+    removeAll() {
+      this.get().then(docs => {
+        return Promise.all(
+          docs.map(doc => {
+            return doc.ref.delete();
+          })
+        );
+      });
     }
   };
 }
+
+Object.assign(create, {
+  fields(newSpecialFields) {
+    Object.assign(specialFields, newSpecialFields);
+    return this;
+  }
+});
