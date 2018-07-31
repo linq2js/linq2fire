@@ -136,14 +136,9 @@ Get all documents which is satisfied query condition
 ### LinqCollection.next(options): Promise
 Get next result set which starts after last result set
 
-### LinqCollection.set(id, data): Promise
-Update single document of current collection which has given id
+### LinqCollection.set(docsOrData, applyToResultSet): Promise
 
-### LinqCollection.set(documentList): Promise
-Update multiple documents of current collection. documentList can be Array(using index as document id) or Object (using key as document id)
-
-### LinqCollection.update(data): Promise
-Update all documents which is satisfied query condition
+### LinqCollection.update(docsOrData, applyToResultSet): Promise
 
 ### LinqCollection.remove(): Promise
 Remove all documents which is satisfied query condition

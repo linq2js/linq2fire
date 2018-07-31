@@ -114,6 +114,38 @@ function create(queryable, collection) {
     return Object.values(docs);
   }
 
+  function modify(docs, callback) {
+    return Promise.resolve(docs).then(function (docs) {
+      var batch = queryable.firestore.batch();
+      var _iteratorNormalCompletion = true;
+      var _didIteratorError = false;
+      var _iteratorError = undefined;
+
+      try {
+        for (var _iterator = docs[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+          var doc = _step.value;
+
+          callback(batch, doc);
+        }
+      } catch (err) {
+        _didIteratorError = true;
+        _iteratorError = err;
+      } finally {
+        try {
+          if (!_iteratorNormalCompletion && _iterator.return) {
+            _iterator.return();
+          }
+        } finally {
+          if (_didIteratorError) {
+            throw _iteratorError;
+          }
+        }
+      }
+
+      return batch.commit();
+    });
+  }
+
   return {
     limit: function limit(count) {
       _limit = count;
@@ -197,28 +229,33 @@ function create(queryable, collection) {
       }
       return this.get(options);
     },
-    set: function set(id, data) {
-      // create multiple document
-      if (arguments.length === 1) {
-        var multipleDocData = id;
-        return Promise.all(Object.keys(multipleDocData).map(function (id) {
-          return queryable.doc(String(id)).set(multipleDocData[id]);
-        }));
+    set: function set(docsOrData, applyToResultSet) {
+      if (applyToResultSet) {
+        return modify(this.get(), function (batch, doc) {
+          return batch.set(doc.ref, docsOrData);
+        });
       }
-      return queryable.doc(String(id)).set(data);
+      return modify(Object.keys(docsOrData).map(function (id) {
+        return queryable.doc(String(id));
+      }), function (batch, doc) {
+        return batch.set(doc, docsOrData[doc.id]);
+      });
     },
-    update: function update(data) {
-      return this.get().then(function (docs) {
-        return Promise.all(docs.map(function (doc) {
-          return doc.ref.set(data);
-        }));
+    update: function update(docsOrData, applyToResultSet) {
+      if (applyToResultSet) {
+        return modify(this.get(), function (batch, doc) {
+          return batch.update(doc.ref, docsOrData);
+        });
+      }
+      return modify(Object.keys(docsOrData).map(function (id) {
+        return queryable.doc(String(id));
+      }), function (batch, doc) {
+        return batch.update(doc, docsOrData[doc.id]);
       });
     },
     remove: function remove() {
-      return this.get().then(function (docs) {
-        return Promise.all(docs.map(function (doc) {
-          return doc.ref.delete();
-        }));
+      return modify(this.get(), function (batch, doc) {
+        return batch.delete(doc.ref);
       });
     }
   };

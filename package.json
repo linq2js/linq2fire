@@ -1,7 +1,7 @@
 {
   "name": "linq2fire",
-  "version": "1.0.4",
-  "description": "Zero dependency. Support operators: >, <, >=, <=, =, ==, ===, <>, !=, !==",
+  "version": "1.0.5",
+  "description": "Zero dependency. Support operators: >, <, >=, <=, =, ==, ===, <>, !=, !== and many more",
   "main": "./dist/index.js",
   "scripts": {
     "test": "npm test"

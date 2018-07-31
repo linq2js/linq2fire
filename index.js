@@ -98,6 +98,16 @@ export default function create(queryable, collection) {
     return Object.values(docs);
   }
 
+  function modify(docs, callback) {
+    return Promise.resolve(docs).then(docs => {
+      const batch = queryable.firestore.batch();
+      for (let doc of docs) {
+        callback(batch, doc);
+      }
+      return batch.commit();
+    });
+  }
+
   return {
     limit(count) {
       limit = count;
@@ -168,35 +178,30 @@ export default function create(queryable, collection) {
       }
       return this.get(options);
     },
-    set(id, data) {
-      // create multiple document
-      if (arguments.length === 1) {
-        const multipleDocData = id;
-        return Promise.all(
-          Object.keys(multipleDocData).map(id =>
-            queryable.doc(String(id)).set(multipleDocData[id])
-          )
+    set(docsOrData, applyToResultSet) {
+      if (applyToResultSet) {
+        return modify(this.get(), (batch, doc) =>
+          batch.set(doc.ref, docsOrData)
         );
       }
-      return queryable.doc(String(id)).set(data);
+      return modify(
+        Object.keys(docsOrData).map(id => queryable.doc(String(id))),
+        (batch, doc) => batch.set(doc, docsOrData[doc.id])
+      );
     },
-    update(data) {
-      return this.get().then(docs => {
-        return Promise.all(
-          docs.map(doc => {
-            return doc.ref.set(data);
-          })
+    update(docsOrData, applyToResultSet) {
+      if (applyToResultSet) {
+        return modify(this.get(), (batch, doc) =>
+          batch.update(doc.ref, docsOrData)
         );
-      });
+      }
+      return modify(
+        Object.keys(docsOrData).map(id => queryable.doc(String(id))),
+        (batch, doc) => batch.update(doc, docsOrData[doc.id])
+      );
     },
     remove() {
-      return this.get().then(docs => {
-        return Promise.all(
-          docs.map(doc => {
-            return doc.ref.delete();
-          })
-        );
-      });
+      return modify(this.get(), (batch, doc) => batch.delete(doc.ref));
     }
   };
 }
