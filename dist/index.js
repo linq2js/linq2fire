@@ -12,7 +12,7 @@ function _defineProperty(obj, key, value) { if (key in obj) { Object.definePrope
 
 function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
 
-var keyRegex = /^([^<>=]+)(<|>|<=|>=|==|=)?/;
+var keyRegex = /^\s*([^<>=\s]+)\s*(<>|<|>|<=|>=|==|=)?\s*$/;
 var specialFields = {
   '@id': '__name__'
 };
@@ -41,6 +41,149 @@ var translateValue = function translateValue(field, value) {
   return field === '@id' ? String(value) : value;
 };
 
+/**
+ * algorithm:
+ * collect all or node, then put them into the list
+ * each or node contains childIndex (from 0 - number of child)
+ * we perform infinite loop until no child index can be increased
+ * for sample:
+ *  A (2) B (3)  are nodes and its chid number (number insde parentheses)
+ *  0     0 are values/child indexes
+ * for each child index, if we can incease it by 1, we reset prev indexes to 0,
+ * unless we try to increase next child index,
+ * if no child index can be increased the loop is end
+ *  A  B
+ *  0  0
+ *  1  0
+ *  0  1
+ *  1  1
+ *  0  2
+ *  1  2
+ *  totally 6 possible generated
+ */
+var findAllPossibles = function findAllPossibles(root) {
+  function traverse(node, callback, parent, index) {
+    if (callback(node, parent, index)) return true;
+    if (node.children && node.children.length) {
+      node.children.some(function (child, childIndex) {
+        return traverse(child, callback, node, childIndex);
+      });
+    }
+  }
+
+  var orNodes = [];
+
+  // create indexes
+  traverse(root, function (node, parent, index) {
+    node.parent = function () {
+      return parent;
+    };
+    if (node.type === 'or') {
+      node.id = orNodes.length;
+      node.__children = node.children;
+      node.childIndex = 0;
+      orNodes.push(node);
+    }
+  });
+  var result = [];
+  var posible = void 0;
+  while (true) {
+    traverse(root, function (node) {
+      if (node.type === 'or') {
+        node.children = [node.__children[node.childIndex]];
+      }
+      if (node.type !== 'or' && node.type !== 'and') {
+        if (!posible) {
+          posible = [];
+          result.push(posible);
+        }
+        posible.push(node);
+      }
+    });
+    posible = null;
+    var increased = false;
+    // increase possible number
+    for (var i = 0; i < orNodes.length; i++) {
+      // can increase
+      var node = orNodes[i];
+      if (node.childIndex + 1 < node.__children.length) {
+        node.childIndex++;
+        // reset prev nodes
+        orNodes.slice(0, i).forEach(function (node) {
+          return node.childIndex = 0;
+        });
+        increased = true;
+        break;
+      }
+    }
+    if (!increased) break;
+  }
+
+  return result;
+};
+
+var parseCondition = function parseCondition(condition) {
+  var result = [];
+  Object.keys(condition).forEach(function (key) {
+    var value = condition[key];
+    if (key === 'or') {
+      var children = [];
+      if (value instanceof Array) {
+        children.push.apply(children, _toConsumableArray(value));
+      } else {
+        Object.keys(value).forEach(function (field) {
+          children.push(_defineProperty({}, field, value[field]));
+        });
+      }
+
+      result.push({
+        type: 'or',
+        children: children.map(function (child) {
+          return {
+            type: 'and',
+            children: parseCondition(child)
+          };
+        })
+      });
+    } else {
+      // parse normal criteria
+      var _ref = keyRegex.exec(key) || [],
+          _ref2 = _slicedToArray(_ref, 3),
+          field = _ref2[1],
+          _ref2$ = _ref2[2],
+          op = _ref2$ === undefined ? '==' : _ref2$;
+
+      if (!field) {
+        throw new Error('Invalid criteria ' + key);
+      }
+      if (op === '=' || op === '===') {
+        op = '==';
+      }
+      if (value instanceof Array) {
+        if (op !== '==') {
+          throw new Error('Unsupported ' + op + ' for Array');
+        }
+        result.push({
+          type: 'or',
+          children: value.map(function (value) {
+            return { field: field, type: op, value: value };
+          })
+        });
+      } else {
+        if (op === '<>' || op === '!=' || op === '!==') {
+          result.push({
+            type: 'or',
+            children: [{ field: field, type: '>', value: value }, { field: field, type: '<', value: value }]
+          });
+        } else {
+          result.push({ field: field, type: op, value: value });
+        }
+      }
+    }
+  });
+  return result;
+};
+
 function create(queryable, collection) {
   if (queryable.collection) {
     if (collection) {
@@ -50,49 +193,12 @@ function create(queryable, collection) {
     }
   }
   var _orderBy = [];
-  var whereAnd = {};
-  var whereOr = [];
+  var _where = [];
+  var unsubscribes = [];
   var _limit = 0;
   var lastGet = void 0,
       lastDocs = void 0;
-
-  function bind(callback) {
-    var q = Object.keys(whereAnd).reduce(function (queryable, key) {
-      var _keyRegex$exec = keyRegex.exec(key),
-          _keyRegex$exec2 = _slicedToArray(_keyRegex$exec, 3),
-          field = _keyRegex$exec2[1],
-          _keyRegex$exec2$ = _keyRegex$exec2[2],
-          op = _keyRegex$exec2$ === undefined ? '=' : _keyRegex$exec2$;
-
-      var value = whereAnd[key];
-      return queryable.where(translateField(field), op === '=' ? '==' : op, translateValue(field, value));
-    }, queryable);
-
-    if (whereOr.length) {
-      whereOr.forEach(function (or) {
-        create(q).where(or).bind(callback);
-      });
-    } else {
-      callback(q);
-    }
-  }
-
-  function buildQueries() {
-    var queries = [];
-    bind(function (queryable) {
-      if (_limit) {
-        queryable = queryable.limit(_limit);
-      }
-      if (_orderBy.length) {
-        queryable = _orderBy.reduce(function (queryable, order) {
-          return queryable.orderBy.apply(queryable, _toConsumableArray(order));
-        }, queryable);
-      }
-      queries.push(queryable);
-    });
-
-    return queries;
-  }
+  var compiledQueries = void 0;
 
   function processResults(results) {
     var docs = {};
@@ -146,54 +252,59 @@ function create(queryable, collection) {
     });
   }
 
+  function buildQueries(noCache) {
+    if (!noCache && compiledQueries) return compiledQueries;
+
+    // should copy where before process
+    var posible = findAllPossibles(JSON.parse(JSON.stringify({
+      type: 'and',
+      children: _where
+    })));
+
+    return compiledQueries = posible.map(function (p) {
+      return p.reduce(function (q, node) {
+        if (_limit) {
+          q = q.limit(_limit);
+        }
+        return _orderBy.reduce(function (q, order) {
+          return q.orderBy.apply(q, _toConsumableArray(order));
+        }, q).where(translateField(node.field), node.type, translateValue(node.field, node.value));
+      }, queryable);
+    });
+  }
+
   return {
     limit: function limit(count) {
       _limit = count;
       return this;
     },
-
-    bind: bind,
+    subscribe: function subscribe(options, callback) {
+      if (options instanceof Function) {
+        callback = options;
+        options = {};
+      }
+      unsubscribes.push.apply(unsubscribes, _toConsumableArray(buildQueries().map(function (queryable) {
+        return queryable.onSnapshot(options, callback);
+      })));
+      return this;
+    },
+    unsubscribeAll: function unsubscribeAll() {
+      var copyOfUnsubscribes = unsubscribes.slice();
+      unsubscribes.length = 0;
+      copyOfUnsubscribes.forEach(function (unsubscribe) {
+        return unsubscribe();
+      });
+      return this;
+    },
     where: function where() {
       for (var _len = arguments.length, conditions = Array(_len), _key = 0; _key < _len; _key++) {
         conditions[_key] = arguments[_key];
       }
 
       conditions.forEach(function (condition) {
-        Object.keys(condition).forEach(function (key) {
-          var value = condition[key];
-          key = key.replace(/\s+/g, '');
-          if (key === 'or') {
-            if (!(value instanceof Array)) {
-              value = Object.entries(value).map(function (entry) {
-                return _defineProperty({}, entry[0], entry[1]);
-              });
-            }
-            whereOr.push.apply(whereOr, _toConsumableArray(value));
-          } else {
-            var notEqualOp = isNotEqualOp(key);
-
-            if (value instanceof Array) {
-              if (notEqualOp) {
-                // process not in operator
-              } else {
-                whereOr.push.apply(whereOr, _toConsumableArray([].map.call(value, function (value) {
-                  return _defineProperty({}, key, value);
-                })));
-              }
-            } else {
-              if (notEqualOp) {
-                var _keyRegex$exec3 = keyRegex.exec(key),
-                    _keyRegex$exec4 = _slicedToArray(_keyRegex$exec3, 2),
-                    field = _keyRegex$exec4[1];
-
-                whereOr.push(_defineProperty({}, field + '<', value), _defineProperty({}, field + '>', value));
-              } else {
-                Object.assign(whereAnd, _defineProperty({}, key, value));
-              }
-            }
-          }
-        });
+        return _where.push.apply(_where, _toConsumableArray(parseCondition(condition)));
       });
+      lastGet = lastDocs = compiledQueries = undefined;
       return this;
     },
     orderBy: function orderBy(fields) {

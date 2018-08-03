@@ -1,4 +1,4 @@
-const keyRegex = /^([^<>=]+)(<|>|<=|>=|==|=)?/;
+const keyRegex = /^\s*([^<>=\s]+)\s*(<>|<|>|<=|>=|==|=)?\s*$/;
 const specialFields = {
   '@id': '__name__'
 };
@@ -24,6 +24,136 @@ const translateField = field => specialFields[field] || field;
 const translateValue = (field, value) =>
   field === '@id' ? String(value) : value;
 
+/**
+ * algorithm:
+ * collect all or node, then put them into the list
+ * each or node contains childIndex (from 0 - number of child)
+ * we perform infinite loop until no child index can be increased
+ * for sample:
+ *  A (2) B (3)  are nodes and its chid number (number insde parentheses)
+ *  0     0 are values/child indexes
+ * for each child index, if we can incease it by 1, we reset prev indexes to 0,
+ * unless we try to increase next child index,
+ * if no child index can be increased the loop is end
+ *  A  B
+ *  0  0
+ *  1  0
+ *  0  1
+ *  1  1
+ *  0  2
+ *  1  2
+ *  totally 6 possible generated
+ */
+const findAllPossibles = root => {
+  function traverse(node, callback, parent, index) {
+    if (callback(node, parent, index)) return true;
+    if (node.children && node.children.length) {
+      node.children.some((child, childIndex) =>
+        traverse(child, callback, node, childIndex)
+      );
+    }
+  }
+
+  const orNodes = [];
+
+  // create indexes
+  traverse(root, (node, parent, index) => {
+    node.parent = () => parent;
+    if (node.type === 'or') {
+      node.id = orNodes.length;
+      node.__children = node.children;
+      node.childIndex = 0;
+      orNodes.push(node);
+    }
+  });
+  const result = [];
+  let posible;
+  while (true) {
+    traverse(root, node => {
+      if (node.type === 'or') {
+        node.children = [node.__children[node.childIndex]];
+      }
+      if (node.type !== 'or' && node.type !== 'and') {
+        if (!posible) {
+          posible = [];
+          result.push(posible);
+        }
+        posible.push(node);
+      }
+    });
+    posible = null;
+    let increased = false;
+    // increase possible number
+    for (let i = 0; i < orNodes.length; i++) {
+      // can increase
+      const node = orNodes[i];
+      if (node.childIndex + 1 < node.__children.length) {
+        node.childIndex++;
+        // reset prev nodes
+        orNodes.slice(0, i).forEach(node => (node.childIndex = 0));
+        increased = true;
+        break;
+      }
+    }
+    if (!increased) break;
+  }
+
+  return result;
+};
+
+const parseCondition = condition => {
+  const result = [];
+  Object.keys(condition).forEach(key => {
+    const value = condition[key];
+    if (key === 'or') {
+      const children = [];
+      if (value instanceof Array) {
+        children.push(...value);
+      } else {
+        Object.keys(value).forEach(field => {
+          children.push({ [field]: value[field] });
+        });
+      }
+
+      result.push({
+        type: 'or',
+        children: children.map(child => ({
+          type: 'and',
+          children: parseCondition(child)
+        }))
+      });
+    } else {
+      // parse normal criteria
+      let [, field, op = '=='] = keyRegex.exec(key) || [];
+      if (!field) {
+        throw new Error('Invalid criteria ' + key);
+      }
+      if (op === '=' || op === '===') {
+        op = '==';
+      }
+      if (value instanceof Array) {
+        if (op !== '==') {
+          throw new Error('Unsupported ' + op + ' for Array');
+        }
+        result.push({
+          type: 'or',
+          children: value.map(value => ({ field, type: op, value }))
+        });
+      } else {
+        if (op === '<>' || op === '!=' || op === '!==') {
+          result.push({
+            type: 'or',
+            children: [{ field, type: '>', value }, { field, type: '<', value }]
+          });
+        } else {
+          result.push({ field, type: op, value });
+        }
+      }
+    }
+  });
+  return result;
+};
+
 export default function create(queryable, collection) {
   if (queryable.collection) {
     if (collection) {
@@ -33,50 +163,11 @@ export default function create(queryable, collection) {
     }
   }
   const orderBy = [];
-  const whereAnd = {};
-  const whereOr = [];
+  const where = [];
+  const unsubscribes = [];
   let limit = 0;
   let lastGet, lastDocs;
-
-  function bind(callback) {
-    let q = Object.keys(whereAnd).reduce((queryable, key) => {
-      const [, field, op = '='] = keyRegex.exec(key);
-      const value = whereAnd[key];
-      return queryable.where(
-        translateField(field),
-        op === '=' ? '==' : op,
-        translateValue(field, value)
-      );
-    }, queryable);
-
-    if (whereOr.length) {
-      whereOr.forEach(or => {
-        create(q)
-          .where(or)
-          .bind(callback);
-      });
-    } else {
-      callback(q);
-    }
-  }
-
-  function buildQueries() {
-    const queries = [];
-    bind(queryable => {
-      if (limit) {
-        queryable = queryable.limit(limit);
-      }
-      if (orderBy.length) {
-        queryable = orderBy.reduce(
-          (queryable, order) => queryable.orderBy(...order),
-          queryable
-        );
-      }
-      queries.push(queryable);
-    });
-
-    return queries;
-  }
+  let compiledQueries;
 
   function processResults(results) {
     const docs = {};
@@ -108,49 +199,61 @@ export default function create(queryable, collection) {
     });
   }
 
+  function buildQueries(noCache) {
+    if (!noCache && compiledQueries) return compiledQueries;
+
+    // should copy where before process
+    const posible = findAllPossibles(
+      JSON.parse(
+        JSON.stringify({
+          type: 'and',
+          children: where
+        })
+      )
+    );
+
+    return (compiledQueries = posible.map(p => {
+      return p.reduce((q, node) => {
+        if (limit) {
+          q = q.limit(limit);
+        }
+        return orderBy
+          .reduce((q, order) => q.orderBy(...order), q)
+          .where(
+            translateField(node.field),
+            node.type,
+            translateValue(node.field, node.value)
+          );
+      }, queryable);
+    }));
+  }
+
   return {
     limit(count) {
       limit = count;
       return this;
     },
-    bind,
+    subscribe(options, callback) {
+      if (options instanceof Function) {
+        callback = options;
+        options = {};
+      }
+      unsubscribes.push(
+        ...buildQueries().map(queryable =>
+          queryable.onSnapshot(options, callback)
+        )
+      );
+      return this;
+    },
+    unsubscribeAll() {
+      const copyOfUnsubscribes = unsubscribes.slice();
+      unsubscribes.length = 0;
+      copyOfUnsubscribes.forEach(unsubscribe => unsubscribe());
+      return this;
+    },
     where(...conditions) {
-      conditions.forEach(condition => {
-        Object.keys(condition).forEach(key => {
-          let value = condition[key];
-          key = key.replace(/\s+/g, '');
-          if (key === 'or') {
-            if (!(value instanceof Array)) {
-              value = Object.entries(value).map(entry => ({
-                [entry[0]]: entry[1]
-              }));
-            }
-            whereOr.push(...value);
-          } else {
-            const notEqualOp = isNotEqualOp(key);
-
-            if (value instanceof Array) {
-              if (notEqualOp) {
-                // process not in operator
-              } else {
-                whereOr.push(
-                  ...[].map.call(value, value => ({ [key]: value }))
-                );
-              }
-            } else {
-              if (notEqualOp) {
-                const [, field] = keyRegex.exec(key);
-                whereOr.push(
-                  { [field + '<']: value },
-                  { [field + '>']: value }
-                );
-              } else {
-                Object.assign(whereAnd, { [key]: value });
-              }
-            }
-          }
-        });
-      });
+      conditions.forEach(condition => where.push(...parseCondition(condition)));
+      lastGet = lastDocs = compiledQueries = undefined;
       return this;
     },
     orderBy(fields) {
