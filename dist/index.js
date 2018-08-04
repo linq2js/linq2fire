@@ -16,7 +16,8 @@ var keyRegex = /^\s*([^<>=\s]+)\s*(<>|<|>|<=|>=|==|=)?\s*$/;
 var specialFields = {
   '@id': '__name__'
 };
-
+var arrayMethods = 'slice reduce map filter'.split(/\s+/);
+var copy = Symbol('copy');
 var dbWrapper = function dbWrapper(db) {
   return {
     from: function from(collection, callback) {
@@ -28,10 +29,6 @@ var dbWrapper = function dbWrapper(db) {
       return this;
     }
   };
-};
-
-var isNotEqualOp = function isNotEqualOp(op) {
-  return op.endsWith('<>') || op.endsWith('!=') || op.endsWith('!==');
 };
 
 var translateField = function translateField(field) {
@@ -185,6 +182,8 @@ var parseCondition = function parseCondition(condition) {
 };
 
 function create(queryable, collection) {
+  var _query;
+
   if (queryable.collection) {
     if (collection) {
       queryable = queryable.collection(collection);
@@ -192,10 +191,11 @@ function create(queryable, collection) {
       return dbWrapper(queryable);
     }
   }
+  var unsubscribes = [];
+  var limit = 0;
+  var startAt = void 0;
   var _orderBy = [];
   var _where = [];
-  var unsubscribes = [];
-  var _limit = 0;
   var lastGet = void 0,
       lastDocs = void 0;
   var compiledQueries = void 0;
@@ -209,13 +209,13 @@ function create(queryable, collection) {
     results.some(function (result) {
       if (!result) return;
       result.forEach(function (doc) {
-        if (_limit && count >= _limit) return;
+        if (limit && count >= limit) return;
         if (!(doc.id in docs)) {
           count++;
         }
         docs[doc.id] = doc;
       });
-      return _limit && count >= _limit;
+      return limit && count >= limit;
     });
     return Object.values(docs);
   }
@@ -255,6 +255,20 @@ function create(queryable, collection) {
   function buildQueries(noCache) {
     if (!noCache && compiledQueries) return compiledQueries;
 
+    if (!_where.length) {
+      var q = queryable;
+      if (limit) {
+        q = q.limit(limit);
+      }
+      if (startAt !== undefined) {
+        q = q.startAt(startAt);
+      }
+
+      return [_orderBy.reduce(function (q, order) {
+        return q.orderBy.apply(q, _toConsumableArray(order));
+      }, q)];
+    }
+
     // should copy where before process
     var posible = findAllPossibles(JSON.parse(JSON.stringify({
       type: 'and',
@@ -263,8 +277,11 @@ function create(queryable, collection) {
 
     return compiledQueries = posible.map(function (p) {
       return p.reduce(function (q, node) {
-        if (_limit) {
-          q = q.limit(_limit);
+        if (limit) {
+          q = q.limit(limit);
+        }
+        if (startAt !== undefined) {
+          q = q.startAt(startAt);
         }
         return _orderBy.reduce(function (q, order) {
           return q.orderBy.apply(q, _toConsumableArray(order));
@@ -273,103 +290,135 @@ function create(queryable, collection) {
     });
   }
 
-  return {
-    limit: function limit(count) {
-      _limit = count;
-      return this;
-    },
-    subscribe: function subscribe(options, callback) {
-      if (options instanceof Function) {
-        callback = options;
-        options = {};
-      }
-      unsubscribes.push.apply(unsubscribes, _toConsumableArray(buildQueries().map(function (queryable) {
-        return queryable.onSnapshot(options, callback);
-      })));
-      return this;
-    },
-    unsubscribeAll: function unsubscribeAll() {
-      var copyOfUnsubscribes = unsubscribes.slice();
-      unsubscribes.length = 0;
-      copyOfUnsubscribes.forEach(function (unsubscribe) {
-        return unsubscribe();
-      });
-      return this;
-    },
-    where: function where() {
-      for (var _len = arguments.length, conditions = Array(_len), _key = 0; _key < _len; _key++) {
-        conditions[_key] = arguments[_key];
-      }
+  function clone(overwriteData) {
+    return create(queryable)[copy](Object.assign({
+      limit: limit,
+      where: _where,
+      orderBy: _orderBy,
+      startAt: startAt
+    }, overwriteData));
+  }
 
-      conditions.forEach(function (condition) {
-        return _where.push.apply(_where, _toConsumableArray(parseCondition(condition)));
-      });
-      lastGet = lastDocs = compiledQueries = undefined;
-      return this;
-    },
-    orderBy: function orderBy(fields) {
-      Object.keys(fields).forEach(function (field) {
-        return _orderBy.push([field, fields[field]]);
-      });
-      return this;
-    },
+  var query = (_query = {}, _defineProperty(_query, copy, function (data) {
+    limit = data.limit;
+    _where = data.where;
+    _orderBy = data.orderBy;
+    startAt = data.startAt;
+    return this;
+  }), _defineProperty(_query, 'subscribe', function subscribe(options, callback) {
+    if (options instanceof Function) {
+      callback = options;
+      options = {};
+    }
+    unsubscribes.push.apply(unsubscribes, _toConsumableArray(buildQueries().map(function (queryable) {
+      return queryable.onSnapshot(options, callback);
+    })));
+    return this;
+  }), _defineProperty(_query, 'unsubscribeAll', function unsubscribeAll() {
+    var copyOfUnsubscribes = unsubscribes.slice();
+    unsubscribes.length = 0;
+    copyOfUnsubscribes.forEach(function (unsubscribe) {
+      return unsubscribe();
+    });
+    return this;
+  }), _defineProperty(_query, 'limit', function limit(count) {
+    return clone({ limit: count });
+  }), _defineProperty(_query, 'first', function first() {
+    return this.limit(1).get().then(function (results) {
+      return results[0];
+    });
+  }), _defineProperty(_query, 'where', function where() {
+    var newWhere = _where.slice();
 
-    get: function get() {
-      var _ref3 = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {},
-          source = _ref3.source;
+    for (var _len = arguments.length, conditions = Array(_len), _key = 0; _key < _len; _key++) {
+      conditions[_key] = arguments[_key];
+    }
 
-      var promises = buildQueries().map(function (queryable) {
-        return queryable.get(source);
+    conditions.forEach(function (condition) {
+      return newWhere.push.apply(newWhere, _toConsumableArray(parseCondition(condition)));
+    });
+    return clone({
+      where: newWhere
+    });
+  }), _defineProperty(_query, 'orderBy', function orderBy(fields) {
+    var newOrderBy = _orderBy.slice();
+    Object.keys(fields).forEach(function (field) {
+      return newOrderBy.push([field, fields[field]]);
+    });
+    return clone({
+      orderBy: newOrderBy
+    });
+  }), _defineProperty(_query, 'get', function get() {
+    var _ref3 = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {},
+        source = _ref3.source;
+
+    var promises = buildQueries().map(function (queryable) {
+      return queryable.get(source);
+    });
+    return lastGet = Promise.all(promises).then(processResults);
+  }), _defineProperty(_query, 'data', function data(options) {
+    return this.get(options).then(function (results) {
+      return results.map(function (x) {
+        return x.data();
       });
-      return lastGet = Promise.all(promises).then(processResults);
-    },
-    next: function next() {
-      var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
-      var source = options.source;
+    });
+  }), _defineProperty(_query, 'next', function next() {
+    var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
+    var source = options.source;
 
-      if (lastGet) {
-        return lastGet = lastGet.then(function (docs) {
-          if (!docs.length) return [];
-          var queries = buildQueries();
-          var promises = queries.map(function (queryable, index) {
-            if (!lastDocs[index]) return undefined;
-            return queryable.startAfter(lastDocs[index]).get(source);
-          });
-          return Promise.all(promises).then(processResults);
+    if (lastGet) {
+      return lastGet = lastGet.then(function (docs) {
+        if (!docs.length) return [];
+        var queries = buildQueries();
+        var promises = queries.map(function (queryable, index) {
+          if (!lastDocs[index]) return undefined;
+          return queryable.startAfter(lastDocs[index]).get(source);
         });
-      }
-      return this.get(options);
-    },
-    set: function set(docsOrData, applyToResultSet) {
-      if (applyToResultSet) {
-        return modify(this.get(), function (batch, doc) {
-          return batch.set(doc.ref, docsOrData);
-        });
-      }
-      return modify(Object.keys(docsOrData).map(function (id) {
-        return queryable.doc(String(id));
-      }), function (batch, doc) {
-        return batch.set(doc, docsOrData[doc.id]);
-      });
-    },
-    update: function update(docsOrData, applyToResultSet) {
-      if (applyToResultSet) {
-        return modify(this.get(), function (batch, doc) {
-          return batch.update(doc.ref, docsOrData);
-        });
-      }
-      return modify(Object.keys(docsOrData).map(function (id) {
-        return queryable.doc(String(id));
-      }), function (batch, doc) {
-        return batch.update(doc, docsOrData[doc.id]);
-      });
-    },
-    remove: function remove() {
-      return modify(this.get(), function (batch, doc) {
-        return batch.delete(doc.ref);
+        return Promise.all(promises).then(processResults);
       });
     }
-  };
+    return this.get(options);
+  }), _defineProperty(_query, 'set', function set(docsOrData, applyToResultSet) {
+    if (applyToResultSet) {
+      return modify(this.get(), function (batch, doc) {
+        return batch.set(doc.ref, docsOrData);
+      });
+    }
+    return modify(Object.keys(docsOrData).map(function (id) {
+      return queryable.doc(String(id));
+    }), function (batch, doc) {
+      return batch.set(doc, docsOrData[doc.id]);
+    });
+  }), _defineProperty(_query, 'update', function update(docsOrData, applyToResultSet) {
+    if (applyToResultSet) {
+      return modify(this.get(), function (batch, doc) {
+        return batch.update(doc.ref, docsOrData);
+      });
+    }
+    return modify(Object.keys(docsOrData).map(function (id) {
+      return queryable.doc(String(id));
+    }), function (batch, doc) {
+      return batch.update(doc, docsOrData[doc.id]);
+    });
+  }), _defineProperty(_query, 'remove', function remove() {
+    return modify(this.get(), function (batch, doc) {
+      return batch.delete(doc.ref);
+    });
+  }), _query);
+
+  arrayMethods.forEach(function (method) {
+    query[method] = function () {
+      for (var _len2 = arguments.length, args = Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
+        args[_key2] = arguments[_key2];
+      }
+
+      return query.get().then(function (results) {
+        return results[method].apply(results, args);
+      });
+    };
+  });
+
+  return query;
 }
 
 Object.assign(create, {

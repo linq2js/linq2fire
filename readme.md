@@ -4,6 +4,7 @@
 import linq from 'linq2fire';
 const db = firebase.firestore();
 
+
 const printDocs = heading => docs => {
   console.log('**********', heading.toUpperCase(), '**********');
   docs.forEach(doc => console.log(doc.id, doc.data()));
@@ -19,43 +20,45 @@ const test = async () => {
   //       .forEach(change => console.log(change, change.doc.data()));
   //   });
 
-  await linq(db)
-    .from('todos')
-    .remove();
+  const $todos = linq(db).from('todos');
+
+  await $todos.remove();
 
   // add single doc
-  await linq(db)
-    .from('todos')
-    .set(1, {
-      text: 'Task 1'
-    });
+  await $todos.set(1, {
+    text: 'Task 1'
+  });
   // add multiple docs
-  await linq(db)
-    .from('todos')
-    .set({
-      1: {
-        text: 'Task 1',
-        category: 'A'
-      },
-      2: {
-        text: 'Task 2',
-        category: 'B'
-      },
-      3: {
-        text: 'Task 3'
-      },
-      4: {
-        text: 'Task 4',
-        category: 'B'
-      },
-      5: {
-        text: 'Task 5',
-        category: 'A'
-      }
+  await $todos.set({
+    1: {
+      text: 'Task 1',
+      category: 'A'
+    },
+    2: {
+      text: 'Task 2',
+      category: 'B'
+    },
+    3: {
+      text: 'Task 3'
+    },
+    4: {
+      text: 'Task 4',
+      category: 'B'
+    },
+    5: {
+      text: 'Task 5',
+      category: 'A'
+    }
+  });
+
+  await $todos
+    .orderBy({ text: 'desc' })
+    .first()
+    .then(first => {
+      console.log('Get first task ', first && first.data());
     });
 
-  await linq(db)
-    .from('todos')
+  await $todos
     .where({
       // in operator
       text: ['Task 1', 'Task 2']
@@ -63,16 +66,14 @@ const test = async () => {
     .get()
     .then(printDocs('Find tasks: 1, 2, 3'));
 
-  await linq(db)
-    .from('todos')
+  await $todos
     .where({
       'text <': 'Task 2'
     })
     .get()
     .then(printDocs('Find all tasks which has text less than Task 2'));
 
-  await linq(db)
-    .from('todos')
+  await $todos
     .where({
       // not equal
       'text <>': 'Task 1'
@@ -80,8 +81,7 @@ const test = async () => {
     .get()
     .then(printDocs('Find all tasks which has text not equal Task 1'));
 
-  await linq(db)
-    .from('todos')
+  await $todos
     .where({
       // find by id
       '@id': 1
@@ -89,8 +89,7 @@ const test = async () => {
     .get()
     .then(printDocs('Find task by id'));
 
-  await linq(db)
-    .from('todos')
+  await $todos
     .where({
       // multiple IN operators
       text: ['Task 1', 'Task 2', 'Task 3'],
@@ -99,8 +98,7 @@ const test = async () => {
     .get()
     .then(printDocs('Find task with multiple IN operators'));
 
-  await linq(db)
-    .from('todos')
+  await $todos
     .where({
       text: ['Task 1', 'Task 2', 'Task 3'],
       or: [{ category: 'A' }, { category: 'B' }]
@@ -108,8 +106,7 @@ const test = async () => {
     .get()
     .then(printDocs('Find task with OR operator '));
 
-  await linq(db)
-    .from('todos')
+  await $todos
     .where({
       or: {
         category: 'A',
@@ -120,8 +117,7 @@ const test = async () => {
     .then(printDocs('Find task with OR operator '));
 
   // support pagination
-  const pagination = linq(db)
-    .from('todos')
+  const pagination = $todos
     .limit(1)
     .orderBy({
       text: 'asc'
@@ -143,6 +139,7 @@ const test = async () => {
 };
 
 test();
+
 
 ```
 

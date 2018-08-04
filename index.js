@@ -2,7 +2,8 @@ const keyRegex = /^\s*([^<>=\s]+)\s*(<>|<|>|<=|>=|==|=)?\s*$/;
 const specialFields = {
   '@id': '__name__'
 };
-
+const arrayMethods = 'slice reduce map filter'.split(/\s+/);
+const copy = Symbol('copy');
 const dbWrapper = db => {
   return {
     from(collection, callback) {
@@ -14,10 +15,6 @@ const dbWrapper = db => {
       return this;
     }
   };
-};
-
-const isNotEqualOp = op => {
-  return op.endsWith('<>') || op.endsWith('!=') || op.endsWith('!==');
 };
 
 const translateField = field => specialFields[field] || field;
@@ -162,10 +159,11 @@ export default function create(queryable, collection) {
       return dbWrapper(queryable);
     }
   }
-  const orderBy = [];
-  const where = [];
   const unsubscribes = [];
   let limit = 0;
+  let startAt;
+  let orderBy = [];
+  let where = [];
   let lastGet, lastDocs;
   let compiledQueries;
 
@@ -202,6 +200,18 @@ export default function create(queryable, collection) {
   function buildQueries(noCache) {
     if (!noCache && compiledQueries) return compiledQueries;
 
+    if (!where.length) {
+      let q = queryable;
+      if (limit) {
+        q = q.limit(limit);
+      }
+      if (startAt !== undefined) {
+        q = q.startAt(startAt);
+      }
+
+      return [orderBy.reduce((q, order) => q.orderBy(...order), q)];
+    }
+
     // should copy where before process
     const posible = findAllPossibles(
       JSON.parse(
@@ -217,6 +227,9 @@ export default function create(queryable, collection) {
         if (limit) {
           q = q.limit(limit);
         }
+        if (startAt !== undefined) {
+          q = q.startAt(startAt);
+        }
         return orderBy
           .reduce((q, order) => q.orderBy(...order), q)
           .where(
@@ -228,9 +241,26 @@ export default function create(queryable, collection) {
     }));
   }
 
-  return {
-    limit(count) {
-      limit = count;
+  function clone(overwriteData) {
+    return create(queryable)[copy](
+      Object.assign(
+        {
+          limit,
+          where,
+          orderBy,
+          startAt
+        },
+        overwriteData
+      )
+    );
+  }
+
+  const query = {
+    [copy](data) {
+      limit = data.limit;
+      where = data.where;
+      orderBy = data.orderBy;
+      startAt = data.startAt;
       return this;
     },
     subscribe(options, callback) {
@@ -251,20 +281,40 @@ export default function create(queryable, collection) {
       copyOfUnsubscribes.forEach(unsubscribe => unsubscribe());
       return this;
     },
+    limit(count) {
+      return clone({ limit: count });
+    },
+    first() {
+      return this.limit(1)
+        .get()
+        .then(results => {
+          return results[0];
+        });
+    },
     where(...conditions) {
-      conditions.forEach(condition => where.push(...parseCondition(condition)));
-      lastGet = lastDocs = compiledQueries = undefined;
-      return this;
+      const newWhere = where.slice();
+      conditions.forEach(condition =>
+        newWhere.push(...parseCondition(condition))
+      );
+      return clone({
+        where: newWhere
+      });
     },
     orderBy(fields) {
+      const newOrderBy = orderBy.slice();
       Object.keys(fields).forEach(field =>
-        orderBy.push([field, fields[field]])
+        newOrderBy.push([field, fields[field]])
       );
-      return this;
+      return clone({
+        orderBy: newOrderBy
+      });
     },
     get: function get({ source } = {}) {
       const promises = buildQueries().map(queryable => queryable.get(source));
       return (lastGet = Promise.all(promises).then(processResults));
+    },
+    data(options) {
+      return this.get(options).then(results => results.map(x => x.data()));
     },
     next(options = {}) {
       const { source } = options;
@@ -307,6 +357,13 @@ export default function create(queryable, collection) {
       return modify(this.get(), (batch, doc) => batch.delete(doc.ref));
     }
   };
+
+  arrayMethods.forEach(method => {
+    query[method] = (...args) =>
+      query.get().then(results => results[method](...args));
+  });
+
+  return query;
 }
 
 Object.assign(create, {
