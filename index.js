@@ -1,4 +1,4 @@
-const keyRegex = /^\s*([^<>=\s]+)\s*(<>|<|>|<=|>=|==|=)?\s*$/;
+const keyRegex = /^\s*([^^<>=\s]+)\s*(<>|<|>|<=|>=|==|=|\^=)?\s*$/;
 const specialFields = {
   '@id': '__name__'
 };
@@ -101,7 +101,7 @@ const findAllPossibles = root => {
 const parseCondition = condition => {
   const result = [];
   Object.keys(condition).forEach(key => {
-    const value = condition[key];
+    let value = condition[key];
     if (key === 'or') {
       const children = [];
       if (value instanceof Array) {
@@ -142,6 +142,19 @@ const parseCondition = condition => {
             type: 'or',
             children: [{ field, type: '>', value }, { field, type: '<', value }]
           });
+        }
+        // process startsWith operator
+        else if (op === '^=') {
+          value = String(value);
+          const length = value.length;
+          const frontCode = value.slice(0, length - 1);
+          const endChar = value.slice(length - 1, value.length);
+          const endcode =
+            frontCode + String.fromCharCode(endChar.charCodeAt(0) + 1);
+          result.push(
+            { field, type: '>=', value },
+            { field, type: '<', value: endcode }
+          );
         } else {
           result.push({ field, type: op, value });
         }

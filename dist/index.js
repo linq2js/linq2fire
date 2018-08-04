@@ -12,7 +12,7 @@ function _defineProperty(obj, key, value) { if (key in obj) { Object.definePrope
 
 function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
 
-var keyRegex = /^\s*([^<>=\s]+)\s*(<>|<|>|<=|>=|==|=)?\s*$/;
+var keyRegex = /^\s*([^^<>=\s]+)\s*(<>|<|>|<=|>=|==|=|\^=)?\s*$/;
 var specialFields = {
   '@id': '__name__'
 };
@@ -172,9 +172,18 @@ var parseCondition = function parseCondition(condition) {
             type: 'or',
             children: [{ field: field, type: '>', value: value }, { field: field, type: '<', value: value }]
           });
-        } else {
-          result.push({ field: field, type: op, value: value });
         }
+        // process startsWith operator
+        else if (op === '^=') {
+            value = String(value);
+            var length = value.length;
+            var frontCode = value.slice(0, length - 1);
+            var endChar = value.slice(length - 1, value.length);
+            var endcode = frontCode + String.fromCharCode(endChar.charCodeAt(0) + 1);
+            result.push({ field: field, type: '>=', value: value }, { field: field, type: '<', value: endcode });
+          } else {
+            result.push({ field: field, type: op, value: value });
+          }
       }
     }
   });

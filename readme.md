@@ -1,9 +1,10 @@
 # Linq2Fire
 
+Supports special operators: IN, OR, startsWith (^=) and many more
+
 ```js
 import linq from 'linq2fire';
 const db = firebase.firestore();
-
 
 const printDocs = heading => docs => {
   console.log('**********', heading.toUpperCase(), '**********');
@@ -48,8 +49,19 @@ const test = async () => {
     5: {
       text: 'Task 5',
       category: 'A'
+    },
+    6: {
+      text: 'Other task',
+      category: 'C'
     }
   });
+
+  await $todos
+    .where({
+      'text ^=': 'Task'
+    })
+    .get()
+    .then(printDocs('Find all tasks which starts with Task'));
 
   await $todos
     .orderBy({ text: 'desc' })
