@@ -16,7 +16,7 @@ var keyRegex = /^\s*([^^<>=\s]+)\s*(<>|<|>|<=|>=|==|=|\^=)?\s*$/;
 var specialFields = {
   '@id': '__name__'
 };
-var arrayMethods = 'slice reduce map filter'.split(/\s+/);
+var arrayMethods = 'slice reduce filter some every'.split(/\s+/);
 var copy = Symbol('copy');
 var dbWrapper = function dbWrapper(db) {
   return {
@@ -208,6 +208,9 @@ function create(queryable, collection) {
   var lastGet = void 0,
       lastDocs = void 0;
   var compiledQueries = void 0;
+  var select = [];
+  var _pipe = [];
+  var _map = [];
 
   function processResults(results) {
     var docs = {};
@@ -226,7 +229,32 @@ function create(queryable, collection) {
       });
       return limit && count >= limit;
     });
-    return Object.values(docs);
+
+    var result = Object.values(docs);
+
+    if (select.length) {
+      result = result.map(function (doc) {
+        return select.reduce(function (mappedObj, selector) {
+          return selector(mappedObj, doc.data(), doc);
+        }, {});
+      });
+    }
+
+    if (_map.length) {
+      result = _map.reduce(function (result, mapper) {
+        return result.map(function (item, index) {
+          return mapper instanceof Function ? mapper(item, index) : item[mapper]();
+        });
+      }, result);
+    }
+
+    if (_pipe.length) {
+      result = _pipe.reduce(function (result, f) {
+        return f(result);
+      }, result);
+    }
+
+    return result;
   }
 
   function modify(docs, callback) {
@@ -304,7 +332,10 @@ function create(queryable, collection) {
       limit: limit,
       where: _where,
       orderBy: _orderBy,
-      startAt: startAt
+      startAt: startAt,
+      select: select,
+      pipe: _pipe,
+      map: _map
     }, overwriteData));
   }
 
@@ -313,7 +344,26 @@ function create(queryable, collection) {
     _where = data.where;
     _orderBy = data.orderBy;
     startAt = data.startAt;
+    select = data.select;
+    _pipe = data.pipe;
+    _map = data.map;
     return this;
+  }), _defineProperty(_query, 'pipe', function pipe() {
+    for (var _len = arguments.length, funcs = Array(_len), _key = 0; _key < _len; _key++) {
+      funcs[_key] = arguments[_key];
+    }
+
+    return clone({
+      pipe: _pipe.slice().concat(funcs)
+    });
+  }), _defineProperty(_query, 'map', function map() {
+    for (var _len2 = arguments.length, mappers = Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
+      mappers[_key2] = arguments[_key2];
+    }
+
+    return clone({
+      map: _map.slice().concat(mappers)
+    });
   }), _defineProperty(_query, 'subscribe', function subscribe(options, callback) {
     if (options instanceof Function) {
       callback = options;
@@ -330,6 +380,44 @@ function create(queryable, collection) {
       return unsubscribe();
     });
     return this;
+  }), _defineProperty(_query, 'select', function select() {
+    var selector = void 0;
+    // single field value selector
+
+    for (var _len3 = arguments.length, args = Array(_len3), _key3 = 0; _key3 < _len3; _key3++) {
+      args[_key3] = arguments[_key3];
+    }
+
+    if (args[0] === true) {
+      var field = args[1];
+      selector = function selector(mappedObj, data, doc) {
+        return field === '@id' ? doc.id : data[field];
+      };
+    } else if (args[0] instanceof Function) {
+      var customSelector = args[0];
+      selector = function selector(mappedObj, data, doc) {
+        return customSelector(data, doc);
+      };
+    } else if (typeof args[0] === 'string') {
+      var fields = args;
+      selector = function selector(mappedObj, data, doc) {
+        fields.forEach(function (field) {
+          return mappedObj[field] = field === '@id' ? doc.id : data[field];
+        });
+        return mappedObj;
+      };
+    } else {
+      var pairs = Object.entries(args[0]);
+      selector = function selector(mappedObj, data, doc) {
+        pairs.forEach(function (pair) {
+          return mappedObj[pair[1]] = pair[0] === '@id' ? doc.id : data[pair[0]];
+        });
+        return mappedObj;
+      };
+    }
+    return clone({
+      select: [selector]
+    });
   }), _defineProperty(_query, 'limit', function limit(count) {
     return clone({ limit: count });
   }), _defineProperty(_query, 'first', function first() {
@@ -339,8 +427,8 @@ function create(queryable, collection) {
   }), _defineProperty(_query, 'where', function where() {
     var newWhere = _where.slice();
 
-    for (var _len = arguments.length, conditions = Array(_len), _key = 0; _key < _len; _key++) {
-      conditions[_key] = arguments[_key];
+    for (var _len4 = arguments.length, conditions = Array(_len4), _key4 = 0; _key4 < _len4; _key4++) {
+      conditions[_key4] = arguments[_key4];
     }
 
     conditions.forEach(function (condition) {
@@ -417,8 +505,8 @@ function create(queryable, collection) {
 
   arrayMethods.forEach(function (method) {
     query[method] = function () {
-      for (var _len2 = arguments.length, args = Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
-        args[_key2] = arguments[_key2];
+      for (var _len5 = arguments.length, args = Array(_len5), _key5 = 0; _key5 < _len5; _key5++) {
+        args[_key5] = arguments[_key5];
       }
 
       return query.get().then(function (results) {

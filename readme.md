@@ -1,10 +1,11 @@
 # Linq2Fire
 
-Supports special operators: IN, OR, startsWith (^=) and many more
+Supports special operators: IN, OR, !=, startsWith (^=) and many more
 
 ```js
 import linq from 'linq2fire';
 const db = firebase.firestore();
+
 
 const printDocs = heading => docs => {
   console.log('**********', heading.toUpperCase(), '**********');
@@ -13,14 +14,6 @@ const printDocs = heading => docs => {
 };
 
 const test = async () => {
-  // linq(db)
-  //   .from('todos')
-  //   .subscribe(snapshot => {
-  //     snapshot
-  //       .docChanges()
-  //       .forEach(change => console.log(change, change.doc.data()));
-  //   });
-
   const $todos = linq(db).from('todos');
 
   await $todos.remove();
@@ -118,6 +111,37 @@ const test = async () => {
     .get()
     .then(printDocs('Find task with OR operator '));
 
+  // get task names
+  await $todos
+    .select({ text: 'name' })
+    .get()
+    .then(console.log);
+
+  // join all items using pipe
+  await $todos
+    .select(true, 'text')
+    .pipe(String)
+    .get()
+    .then(console.log);
+
+  // convert task names to uppercase
+  await $todos
+    .select(true, 'text')
+    .map('toUpperCase')
+    .get()
+    .then(console.log);
+
+  await $todos
+    .select(true, 'text')
+    .map(x => x.toUpperCase())
+    .get()
+    .then(console.log);
+
+  await $todos
+    .select(true, 'text')
+    .get()
+    .then(console.log);
+
   await $todos
     .where({
       or: {
@@ -151,8 +175,6 @@ const test = async () => {
 };
 
 test();
-
-
 ```
 
 ## References:
@@ -168,6 +190,18 @@ Create a linq object to wrap collection, then pass it to callback. This method i
 
 ### linq2fire(collection): LinqCollection
 Create a linq object to wrap collection
+
+### LinqCollection.select(fieldName1: String, fieldName2: String, ...): LinqCollection
+Projects each item of a result set into a new object with specific fields.
+
+### LinqCollection.select(fieldMap: Object): LinqCollection
+Projects each item of a result set into a new object with specific fields.
+
+### LinqCollection.select(valueOnly: Boolean, field: String): LinqCollection
+Transform result set into a array of field value
+
+### LinqCollection.select(customSelector: Function(data: Object, doc: DocumentSnapshot)): LinqCollection
+Projects each item of a result set by using custom selector.
 
 ### LinqCollection.limit(count): LinqCollection
 Limit result set

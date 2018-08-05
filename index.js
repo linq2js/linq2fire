@@ -2,7 +2,7 @@ const keyRegex = /^\s*([^^<>=\s]+)\s*(<>|<|>|<=|>=|==|=|\^=)?\s*$/;
 const specialFields = {
   '@id': '__name__'
 };
-const arrayMethods = 'slice reduce map filter'.split(/\s+/);
+const arrayMethods = 'slice reduce filter some every'.split(/\s+/);
 const copy = Symbol('copy');
 const dbWrapper = db => {
   return {
@@ -179,6 +179,9 @@ export default function create(queryable, collection) {
   let where = [];
   let lastGet, lastDocs;
   let compiledQueries;
+  let select = [];
+  let pipe = [];
+  let map = [];
 
   function processResults(results) {
     const docs = {};
@@ -197,7 +200,34 @@ export default function create(queryable, collection) {
       });
       return limit && count >= limit;
     });
-    return Object.values(docs);
+
+    let result = Object.values(docs);
+
+    if (select.length) {
+      result = result.map(doc => {
+        return select.reduce(
+          (mappedObj, selector) => selector(mappedObj, doc.data(), doc),
+          {}
+        );
+      });
+    }
+
+    if (map.length) {
+      result = map.reduce(
+        (result, mapper) =>
+          result.map(
+            (item, index) =>
+              mapper instanceof Function ? mapper(item, index) : item[mapper]()
+          ),
+        result
+      );
+    }
+
+    if (pipe.length) {
+      result = pipe.reduce((result, f) => f(result), result);
+    }
+
+    return result;
   }
 
   function modify(docs, callback) {
@@ -261,7 +291,10 @@ export default function create(queryable, collection) {
           limit,
           where,
           orderBy,
-          startAt
+          startAt,
+          select,
+          pipe,
+          map
         },
         overwriteData
       )
@@ -274,7 +307,20 @@ export default function create(queryable, collection) {
       where = data.where;
       orderBy = data.orderBy;
       startAt = data.startAt;
+      select = data.select;
+      pipe = data.pipe;
+      map = data.map;
       return this;
+    },
+    pipe(...funcs) {
+      return clone({
+        pipe: pipe.slice().concat(funcs)
+      });
+    },
+    map(...mappers) {
+      return clone({
+        map: map.slice().concat(mappers)
+      });
     },
     subscribe(options, callback) {
       if (options instanceof Function) {
@@ -293,6 +339,45 @@ export default function create(queryable, collection) {
       unsubscribes.length = 0;
       copyOfUnsubscribes.forEach(unsubscribe => unsubscribe());
       return this;
+    },
+    /**
+     * supports:
+     * single field value selector: select(true, 'field') => fieldValue
+     * multiple fields selector: select('field1', 'field2', ...) => { field1: field1Value, field2: field2Value }
+     * obj map selector: select({ field: 'newFieldName' }) => { newFieldName: fieldValue }
+     * custom selector: select(Function)
+     */
+    select(...args) {
+      let selector;
+      // single field value selector
+      if (args[0] === true) {
+        const field = args[1];
+        selector = (mappedObj, data, doc) =>
+          field === '@id' ? doc.id : data[field];
+      } else if (args[0] instanceof Function) {
+        const customSelector = args[0];
+        selector = (mappedObj, data, doc) => customSelector(data, doc);
+      } else if (typeof args[0] === 'string') {
+        const fields = args;
+        selector = (mappedObj, data, doc) => {
+          fields.forEach(
+            field => (mappedObj[field] = field === '@id' ? doc.id : data[field])
+          );
+          return mappedObj;
+        };
+      } else {
+        const pairs = Object.entries(args[0]);
+        selector = (mappedObj, data, doc) => {
+          pairs.forEach(
+            pair =>
+              (mappedObj[pair[1]] = pair[0] === '@id' ? doc.id : data[pair[0]])
+          );
+          return mappedObj;
+        };
+      }
+      return clone({
+        select: [selector]
+      });
     },
     limit(count) {
       return clone({ limit: count });
