@@ -6,6 +6,8 @@ Object.defineProperty(exports, "__esModule", {
 
 var _slicedToArray = function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"]) _i["return"](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError("Invalid attempt to destructure non-iterable instance"); } }; }();
 
+var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
+
 exports.default = create;
 
 function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
@@ -30,14 +32,24 @@ var dbWrapper = function dbWrapper(db) {
     }
   };
 };
-
+var deepClone = function deepClone(obj) {
+  var clone = Object.assign({}, obj);
+  Object.keys(clone).forEach(function (key) {
+    return clone[key] = _typeof(obj[key]) === 'object' ? deepClone(obj[key]) : obj[key];
+  });
+  return Array.isArray(obj) ? (clone.length = obj.length) && Array.from(clone) : clone;
+};
 var translateField = function translateField(field) {
   return specialFields[field] || field;
 };
 var translateValue = function translateValue(field, value) {
   return field === '@id' ? String(value) : value;
 };
-
+var cloneNode = function cloneNode(node) {
+  return Object.assign({}, node, {
+    children: node.children ? node.children.map(cloneNode) : undefined
+  });
+};
 /**
  * algorithm:
  * collect all or node, then put them into the list
@@ -59,6 +71,7 @@ var translateValue = function translateValue(field, value) {
  *  totally 6 possible generated
  */
 var findAllPossibles = function findAllPossibles(root) {
+  root = cloneNode(root);
   function traverse(node, callback, parent, index) {
     if (callback(node, parent, index)) return true;
     if (node.children && node.children.length) {
@@ -307,10 +320,10 @@ function create(queryable, collection) {
     }
 
     // should copy where before process
-    var posible = findAllPossibles(JSON.parse(JSON.stringify({
+    var posible = findAllPossibles({
       type: 'and',
       children: _where
-    })));
+    });
 
     return compiledQueries = posible.map(function (p) {
       return p.reduce(function (q, node) {

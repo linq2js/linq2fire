@@ -16,11 +16,25 @@ const dbWrapper = db => {
     }
   };
 };
-
+const deepClone = obj => {
+  let clone = Object.assign({}, obj);
+  Object.keys(clone).forEach(
+    key =>
+      (clone[key] =
+        typeof obj[key] === 'object' ? deepClone(obj[key]) : obj[key])
+  );
+  return Array.isArray(obj)
+    ? (clone.length = obj.length) && Array.from(clone)
+    : clone;
+};
 const translateField = field => specialFields[field] || field;
 const translateValue = (field, value) =>
   field === '@id' ? String(value) : value;
-
+const cloneNode = node => {
+  return Object.assign({}, node, {
+    children: node.children ? node.children.map(cloneNode) : undefined
+  });
+};
 /**
  * algorithm:
  * collect all or node, then put them into the list
@@ -42,6 +56,7 @@ const translateValue = (field, value) =>
  *  totally 6 possible generated
  */
 const findAllPossibles = root => {
+  root = cloneNode(root);
   function traverse(node, callback, parent, index) {
     if (callback(node, parent, index)) return true;
     if (node.children && node.children.length) {
@@ -256,14 +271,10 @@ export default function create(queryable, collection) {
     }
 
     // should copy where before process
-    const posible = findAllPossibles(
-      JSON.parse(
-        JSON.stringify({
-          type: 'and',
-          children: where
-        })
-      )
-    );
+    const posible = findAllPossibles({
+      type: 'and',
+      children: where
+    });
 
     return (compiledQueries = posible.map(p => {
       return p.reduce((q, node) => {
