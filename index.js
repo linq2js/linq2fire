@@ -190,7 +190,7 @@ export default function create(queryable, collection) {
   const unsubscribes = [];
   let limit = 0;
   let startAt;
-  let orderBy = [];
+  let orderBy;
   let where = [];
   let lastGet, lastDocs;
   let compiledQueries;
@@ -255,6 +255,12 @@ export default function create(queryable, collection) {
     });
   }
 
+  function createOrderedQuery(q) {
+    if (!orderBy) return q;
+    const pairs = Object.entries(orderBy);
+    return pairs.reduce((q, order) => q.orderBy(...order), q);
+  }
+
   function buildQueries(noCache) {
     if (!noCache && compiledQueries) return compiledQueries;
 
@@ -267,7 +273,7 @@ export default function create(queryable, collection) {
         q = q.startAt(startAt);
       }
 
-      return [orderBy.reduce((q, order) => q.orderBy(...order), q)];
+      return [createOrderedQuery(q)];
     }
 
     // should copy where before process
@@ -277,21 +283,22 @@ export default function create(queryable, collection) {
     });
 
     return (compiledQueries = posible.map(p => {
-      return p.reduce((q, node) => {
-        if (limit) {
-          q = q.limit(limit);
-        }
-        if (startAt !== undefined) {
-          q = q.startAt(startAt);
-        }
-        return orderBy
-          .reduce((q, order) => q.orderBy(...order), q)
-          .where(
-            translateField(node.field),
-            node.type,
-            translateValue(node.field, node.value)
-          );
+      let q = p.reduce((q, node) => {
+        return q.where(
+          translateField(node.field),
+          node.type,
+          translateValue(node.field, node.value)
+        );
       }, queryable);
+
+      if (limit) {
+        q = q.limit(limit);
+      }
+      if (startAt !== undefined) {
+        q = q.startAt(startAt);
+      }
+
+      return createOrderedQuery(q);
     }));
   }
 
@@ -410,12 +417,8 @@ export default function create(queryable, collection) {
       });
     },
     orderBy(fields) {
-      const newOrderBy = orderBy.slice();
-      Object.keys(fields).forEach(field =>
-        newOrderBy.push([field, fields[field]])
-      );
       return clone({
-        orderBy: newOrderBy
+        orderBy: Object.assign({}, orderBy, fields)
       });
     },
     get: function get({ source } = {}) {

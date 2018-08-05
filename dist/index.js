@@ -216,7 +216,7 @@ function create(queryable, collection) {
   var unsubscribes = [];
   var limit = 0;
   var startAt = void 0;
-  var _orderBy = [];
+  var _orderBy = void 0;
   var _where = [];
   var lastGet = void 0,
       lastDocs = void 0;
@@ -302,6 +302,14 @@ function create(queryable, collection) {
     });
   }
 
+  function createOrderedQuery(q) {
+    if (!_orderBy) return q;
+    var pairs = Object.entries(_orderBy);
+    return pairs.reduce(function (q, order) {
+      return q.orderBy.apply(q, _toConsumableArray(order));
+    }, q);
+  }
+
   function buildQueries(noCache) {
     if (!noCache && compiledQueries) return compiledQueries;
 
@@ -314,9 +322,7 @@ function create(queryable, collection) {
         q = q.startAt(startAt);
       }
 
-      return [_orderBy.reduce(function (q, order) {
-        return q.orderBy.apply(q, _toConsumableArray(order));
-      }, q)];
+      return [createOrderedQuery(q)];
     }
 
     // should copy where before process
@@ -326,17 +332,18 @@ function create(queryable, collection) {
     });
 
     return compiledQueries = posible.map(function (p) {
-      return p.reduce(function (q, node) {
-        if (limit) {
-          q = q.limit(limit);
-        }
-        if (startAt !== undefined) {
-          q = q.startAt(startAt);
-        }
-        return _orderBy.reduce(function (q, order) {
-          return q.orderBy.apply(q, _toConsumableArray(order));
-        }, q).where(translateField(node.field), node.type, translateValue(node.field, node.value));
+      var q = p.reduce(function (q, node) {
+        return q.where(translateField(node.field), node.type, translateValue(node.field, node.value));
       }, queryable);
+
+      if (limit) {
+        q = q.limit(limit);
+      }
+      if (startAt !== undefined) {
+        q = q.startAt(startAt);
+      }
+
+      return createOrderedQuery(q);
     });
   }
 
@@ -451,12 +458,8 @@ function create(queryable, collection) {
       where: newWhere
     });
   }), _defineProperty(_query, 'orderBy', function orderBy(fields) {
-    var newOrderBy = _orderBy.slice();
-    Object.keys(fields).forEach(function (field) {
-      return newOrderBy.push([field, fields[field]]);
-    });
     return clone({
-      orderBy: newOrderBy
+      orderBy: Object.assign({}, _orderBy, fields)
     });
   }), _defineProperty(_query, 'get', function get() {
     var _ref3 = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {},
