@@ -19,7 +19,7 @@ var specialFields = {
   '@id': '__name__'
 };
 var arrayMethods = 'slice reduce filter some every'.split(/\s+/);
-var copy = Symbol('copy');
+var copy = '__copy__';
 var dbWrapper = function dbWrapper(db) {
   return {
     from: function from(collection, callback) {

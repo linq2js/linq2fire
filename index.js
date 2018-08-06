@@ -3,7 +3,7 @@ const specialFields = {
   '@id': '__name__'
 };
 const arrayMethods = 'slice reduce filter some every'.split(/\s+/);
-const copy = Symbol('copy');
+const copy = '__copy__';
 const dbWrapper = db => {
   return {
     from(collection, callback) {
