@@ -14,7 +14,7 @@ function _defineProperty(obj, key, value) { if (key in obj) { Object.definePrope
 
 function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
 
-var keyRegex = /^\s*([^^<>=\s]+)\s*(<>|<|>|<=|>=|==|=|\^=)?\s*$/;
+var keyRegex = /^\s*([^^<>=\s]+)\s*(<>|<|>|<=|>=|==|=|\^=|array_contains)?\s*$/;
 var specialFields = {
   '@id': '__name__'
 };
