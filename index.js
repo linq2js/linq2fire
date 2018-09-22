@@ -1,9 +1,9 @@
 const keyRegex = /^\s*([^^<>=\s]+)\s*(<>|<|>|<=|>=|==|=|\^=|array_contains)?\s*$/;
 const specialFields = {
-  '@id': '__name__'
+  "@id": "__name__"
 };
-const arrayMethods = 'slice reduce filter some every'.split(/\s+/);
-const copy = '__copy__';
+const arrayMethods = "slice reduce filter some every".split(/\s+/);
+const copy = "__copy__";
 const dbWrapper = db => {
   return {
     from(collection, callback) {
@@ -21,7 +21,7 @@ const deepClone = obj => {
   Object.keys(clone).forEach(
     key =>
       (clone[key] =
-        typeof obj[key] === 'object' ? deepClone(obj[key]) : obj[key])
+        typeof obj[key] === "object" ? deepClone(obj[key]) : obj[key])
   );
   return Array.isArray(obj)
     ? (clone.length = obj.length) && Array.from(clone)
@@ -29,7 +29,7 @@ const deepClone = obj => {
 };
 const translateField = field => specialFields[field] || field;
 const translateValue = (field, value) =>
-  field === '@id' ? String(value) : value;
+  field === "@id" ? String(value) : value;
 const cloneNode = node => {
   return Object.assign({}, node, {
     children: node.children ? node.children.map(cloneNode) : undefined
@@ -71,7 +71,7 @@ const findAllPossibles = root => {
   // create indexes
   traverse(root, (node, parent, index) => {
     node.parent = () => parent;
-    if (node.type === 'or') {
+    if (node.type === "or") {
       node.id = orNodes.length;
       node.__children = node.children;
       node.childIndex = 0;
@@ -82,10 +82,10 @@ const findAllPossibles = root => {
   let posible;
   while (true) {
     traverse(root, node => {
-      if (node.type === 'or') {
+      if (node.type === "or") {
         node.children = [node.__children[node.childIndex]];
       }
-      if (node.type !== 'or' && node.type !== 'and') {
+      if (node.type !== "or" && node.type !== "and") {
         if (!posible) {
           posible = [];
           result.push(posible);
@@ -117,7 +117,7 @@ const parseCondition = condition => {
   const result = [];
   Object.keys(condition).forEach(key => {
     let value = condition[key];
-    if (key === 'or') {
+    if (key === "or") {
       const children = [];
       if (value instanceof Array) {
         children.push(...value);
@@ -128,38 +128,38 @@ const parseCondition = condition => {
       }
 
       result.push({
-        type: 'or',
+        type: "or",
         children: children.map(child => ({
-          type: 'and',
+          type: "and",
           children: parseCondition(child)
         }))
       });
     } else {
       // parse normal criteria
-      let [, field, op = '=='] = keyRegex.exec(key) || [];
+      let [, field, op = "=="] = keyRegex.exec(key) || [];
       if (!field) {
-        throw new Error('Invalid criteria ' + key);
+        throw new Error("Invalid criteria " + key);
       }
-      if (op === '=' || op === '===') {
-        op = '==';
+      if (op === "=" || op === "===") {
+        op = "==";
       }
       if (value instanceof Array) {
-        if (op !== '==') {
-          throw new Error('Unsupported ' + op + ' for Array');
+        if (op !== "==") {
+          throw new Error("Unsupported " + op + " for Array");
         }
         result.push({
-          type: 'or',
+          type: "or",
           children: value.map(value => ({ field, type: op, value }))
         });
       } else {
-        if (op === '<>' || op === '!=' || op === '!==') {
+        if (op === "<>" || op === "!=" || op === "!==") {
           result.push({
-            type: 'or',
-            children: [{ field, type: '>', value }, { field, type: '<', value }]
+            type: "or",
+            children: [{ field, type: ">", value }, { field, type: "<", value }]
           });
         }
         // process startsWith operator
-        else if (op === '^=') {
+        else if (op === "^=") {
           value = String(value);
           const length = value.length;
           const frontCode = value.slice(0, length - 1);
@@ -167,8 +167,8 @@ const parseCondition = condition => {
           const endcode =
             frontCode + String.fromCharCode(endChar.charCodeAt(0) + 1);
           result.push(
-            { field, type: '>=', value },
-            { field, type: '<', value: endcode }
+            { field, type: ">=", value },
+            { field, type: "<", value: endcode }
           );
         } else {
           result.push({ field, type: op, value });
@@ -278,7 +278,7 @@ export default function create(queryable, collection) {
 
     // should copy where before process
     const posible = findAllPossibles({
-      type: 'and',
+      type: "and",
       children: where
     });
 
@@ -345,12 +345,19 @@ export default function create(queryable, collection) {
         callback = options;
         options = {};
       }
-      unsubscribes.push(
-        ...buildQueries().map(queryable =>
-          queryable.onSnapshot(options, callback)
-        )
+      const currentUnsubscribes = buildQueries().map(queryable =>
+        queryable.onSnapshot(options, callback)
       );
-      return this;
+      unsubscribes.push(...currentUnsubscribes);
+      return function() {
+        currentUnsubscribes.forEach(unsubscribe => {
+          unsubscribe();
+          const index = unsubscribes.indexOf(unsubscribe);
+          if (index !== -1) {
+            unsubscribes.splice(index, 1);
+          }
+        });
+      };
     },
     unsubscribeAll() {
       const copyOfUnsubscribes = unsubscribes.slice();
@@ -371,15 +378,15 @@ export default function create(queryable, collection) {
       if (args[0] === true) {
         const field = args[1];
         selector = (mappedObj, data, doc) =>
-          field === '@id' ? doc.id : data[field];
+          field === "@id" ? doc.id : data[field];
       } else if (args[0] instanceof Function) {
         const customSelector = args[0];
         selector = (mappedObj, data, doc) => customSelector(data, doc);
-      } else if (typeof args[0] === 'string') {
+      } else if (typeof args[0] === "string") {
         const fields = args;
         selector = (mappedObj, data, doc) => {
           fields.forEach(
-            field => (mappedObj[field] = field === '@id' ? doc.id : data[field])
+            field => (mappedObj[field] = field === "@id" ? doc.id : data[field])
           );
           return mappedObj;
         };
@@ -388,7 +395,7 @@ export default function create(queryable, collection) {
         selector = (mappedObj, data, doc) => {
           pairs.forEach(
             pair =>
-              (mappedObj[pair[1]] = pair[0] === '@id' ? doc.id : data[pair[0]])
+              (mappedObj[pair[1]] = pair[0] === "@id" ? doc.id : data[pair[0]])
           );
           return mappedObj;
         };
