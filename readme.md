@@ -7,6 +7,7 @@ import linq from 'linq2fire';
 const db = firebase.firestore();
 
 
+
 const printDocs = heading => docs => {
   console.log('**********', heading.toUpperCase(), '**********');
   docs.forEach(doc => console.log(doc.id, doc.data()));
@@ -15,6 +16,13 @@ const printDocs = heading => docs => {
 
 const test = async () => {
   const $todos = linq(db).from('todos');
+
+  await $todos
+    .orderBy({ text: 'desc' })
+    .orderBy({ text: 'desc' })
+    .where({ category: 'A' })
+    .get()
+    .then(printDocs('Duplicate order by'));
 
   await $todos.remove();
 
@@ -30,14 +38,17 @@ const test = async () => {
     },
     2: {
       text: 'Task 2',
-      category: 'B'
+      category: 'B',
+      categories: ['A', 'B']
     },
     3: {
-      text: 'Task 3'
+      text: 'Task 3',
+      categories: ['A']
     },
     4: {
       text: 'Task 4',
-      category: 'B'
+      category: 'B',
+      categories: ['B']
     },
     5: {
       text: 'Task 5',
@@ -111,6 +122,13 @@ const test = async () => {
     .get()
     .then(printDocs('Find task with OR operator '));
 
+  // await $todos
+  //   .where({
+  //     'category array_contains': 'A'
+  //   })
+  //   .get()
+  //   .then(printDocs('Finding task using array_contains operator'));
+
   // get task names
   await $todos
     .select({ text: 'name' })
@@ -152,6 +170,20 @@ const test = async () => {
     .get()
     .then(printDocs('Find task with OR operator '));
 
+  await $todos
+    .where({
+      'categories has': 'A'
+    })
+    .get()
+    .then(printDocs('Find task using has operator'));
+
+  await $todos
+    .where({
+      'categories array-contains': 'A'
+    })
+    .get()
+    .then(printDocs('Find task using array-contains operator'));
+
   // support pagination
   const pagination = $todos
     .limit(1)
@@ -175,6 +207,7 @@ const test = async () => {
 };
 
 test();
+
 ```
 
 ## References:
@@ -208,7 +241,8 @@ Limit result set
 
 ### LinqCollection.where(conditions): LinqCollection
 Filter result set by multiple conditions { text: 'abc', 'age >': 100, fieldValueMustBeIn: [1, 2, 3, 4, 5], 'field <>': 0 }
-Support operators: >, <, >=, <=, =, ==, ===, <>, !=, !==
+Support operators: >, <, >=, <=, =, ==, ===, <>, !=, !==, has, array-contains.
+'has' is shorthand of 'array-contains'
 
 ### LinqCollection.orderBy(fields): LinqCollection
 Sort result set by specified fields { field1: 'asc', field2: 'desc' }

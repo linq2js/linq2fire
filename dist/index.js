@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 Object.defineProperty(exports, "__esModule", {
   value: true
@@ -14,12 +14,12 @@ function _defineProperty(obj, key, value) { if (key in obj) { Object.definePrope
 
 function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
 
-var keyRegex = /^\s*([^^<>=\s]+)\s*(<>|<|>|<=|>=|==|=|\^=|array-contains)?\s*$/;
+var keyRegex = /^\s*([^^<>=\s]+)\s*(<>|<|>|<=|>=|==|=|\^=|array-contains|has)?\s*$/;
 var specialFields = {
-  "@id": "__name__"
+  '@id': '__name__'
 };
-var arrayMethods = "slice reduce filter some every".split(/\s+/);
-var copy = "__copy__";
+var arrayMethods = 'slice reduce filter some every'.split(/\s+/);
+var copy = '__copy__';
 var dbWrapper = function dbWrapper(db) {
   return {
     from: function from(collection, callback) {
@@ -35,7 +35,7 @@ var dbWrapper = function dbWrapper(db) {
 var deepClone = function deepClone(obj) {
   var clone = Object.assign({}, obj);
   Object.keys(clone).forEach(function (key) {
-    return clone[key] = _typeof(obj[key]) === "object" ? deepClone(obj[key]) : obj[key];
+    return clone[key] = _typeof(obj[key]) === 'object' ? deepClone(obj[key]) : obj[key];
   });
   return Array.isArray(obj) ? (clone.length = obj.length) && Array.from(clone) : clone;
 };
@@ -43,7 +43,7 @@ var translateField = function translateField(field) {
   return specialFields[field] || field;
 };
 var translateValue = function translateValue(field, value) {
-  return field === "@id" ? String(value) : value;
+  return field === '@id' ? String(value) : value;
 };
 var cloneNode = function cloneNode(node) {
   return Object.assign({}, node, {
@@ -88,7 +88,7 @@ var findAllPossibles = function findAllPossibles(root) {
     node.parent = function () {
       return parent;
     };
-    if (node.type === "or") {
+    if (node.type === 'or') {
       node.id = orNodes.length;
       node.__children = node.children;
       node.childIndex = 0;
@@ -99,10 +99,10 @@ var findAllPossibles = function findAllPossibles(root) {
   var posible = void 0;
   while (true) {
     traverse(root, function (node) {
-      if (node.type === "or") {
+      if (node.type === 'or') {
         node.children = [node.__children[node.childIndex]];
       }
-      if (node.type !== "or" && node.type !== "and") {
+      if (node.type !== 'or' && node.type !== 'and') {
         if (!posible) {
           posible = [];
           result.push(posible);
@@ -136,7 +136,7 @@ var parseCondition = function parseCondition(condition) {
   var result = [];
   Object.keys(condition).forEach(function (key) {
     var value = condition[key];
-    if (key === "or") {
+    if (key === 'or') {
       var children = [];
       if (value instanceof Array) {
         children.push.apply(children, _toConsumableArray(value));
@@ -147,10 +147,10 @@ var parseCondition = function parseCondition(condition) {
       }
 
       result.push({
-        type: "or",
+        type: 'or',
         children: children.map(function (child) {
           return {
-            type: "and",
+            type: 'and',
             children: parseCondition(child)
           };
         })
@@ -161,39 +161,42 @@ var parseCondition = function parseCondition(condition) {
           _ref2 = _slicedToArray(_ref, 3),
           field = _ref2[1],
           _ref2$ = _ref2[2],
-          op = _ref2$ === undefined ? "==" : _ref2$;
+          op = _ref2$ === undefined ? '==' : _ref2$;
 
       if (!field) {
-        throw new Error("Invalid criteria " + key);
+        throw new Error('Invalid criteria ' + key);
       }
-      if (op === "=" || op === "===") {
-        op = "==";
+      if (op === 'has') {
+        op = 'array-contains';
+      }
+      if (op === '=' || op === '===') {
+        op = '==';
       }
       if (value instanceof Array) {
-        if (op !== "==") {
-          throw new Error("Unsupported " + op + " for Array");
+        if (op !== '==') {
+          throw new Error('Unsupported ' + op + ' for Array');
         }
         result.push({
-          type: "or",
+          type: 'or',
           children: value.map(function (value) {
             return { field: field, type: op, value: value };
           })
         });
       } else {
-        if (op === "<>" || op === "!=" || op === "!==") {
+        if (op === '<>' || op === '!=' || op === '!==') {
           result.push({
-            type: "or",
-            children: [{ field: field, type: ">", value: value }, { field: field, type: "<", value: value }]
+            type: 'or',
+            children: [{ field: field, type: '>', value: value }, { field: field, type: '<', value: value }]
           });
         }
         // process startsWith operator
-        else if (op === "^=") {
+        else if (op === '^=') {
             value = String(value);
             var length = value.length;
             var frontCode = value.slice(0, length - 1);
             var endChar = value.slice(length - 1, value.length);
             var endcode = frontCode + String.fromCharCode(endChar.charCodeAt(0) + 1);
-            result.push({ field: field, type: ">=", value: value }, { field: field, type: "<", value: endcode });
+            result.push({ field: field, type: '>=', value: value }, { field: field, type: '<', value: endcode });
           } else {
             result.push({ field: field, type: op, value: value });
           }
@@ -327,7 +330,7 @@ function create(queryable, collection) {
 
     // should copy where before process
     var posible = findAllPossibles({
-      type: "and",
+      type: 'and',
       children: _where
     });
 
@@ -368,7 +371,7 @@ function create(queryable, collection) {
     _pipe = data.pipe;
     _map = data.map;
     return this;
-  }), _defineProperty(_query, "pipe", function pipe() {
+  }), _defineProperty(_query, 'pipe', function pipe() {
     for (var _len = arguments.length, funcs = Array(_len), _key = 0; _key < _len; _key++) {
       funcs[_key] = arguments[_key];
     }
@@ -376,7 +379,7 @@ function create(queryable, collection) {
     return clone({
       pipe: _pipe.slice().concat(funcs)
     });
-  }), _defineProperty(_query, "map", function map() {
+  }), _defineProperty(_query, 'map', function map() {
     for (var _len2 = arguments.length, mappers = Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
       mappers[_key2] = arguments[_key2];
     }
@@ -384,7 +387,7 @@ function create(queryable, collection) {
     return clone({
       map: _map.slice().concat(mappers)
     });
-  }), _defineProperty(_query, "subscribe", function subscribe(options, callback) {
+  }), _defineProperty(_query, 'subscribe', function subscribe(options, callback) {
     if (options instanceof Function) {
       callback = options;
       options = {};
@@ -402,14 +405,14 @@ function create(queryable, collection) {
         }
       });
     };
-  }), _defineProperty(_query, "unsubscribeAll", function unsubscribeAll() {
+  }), _defineProperty(_query, 'unsubscribeAll', function unsubscribeAll() {
     var copyOfUnsubscribes = unsubscribes.slice();
     unsubscribes.length = 0;
     copyOfUnsubscribes.forEach(function (unsubscribe) {
       return unsubscribe();
     });
     return this;
-  }), _defineProperty(_query, "select", function select() {
+  }), _defineProperty(_query, 'select', function select() {
     var selector = void 0;
     // single field value selector
 
@@ -420,18 +423,18 @@ function create(queryable, collection) {
     if (args[0] === true) {
       var field = args[1];
       selector = function selector(mappedObj, data, doc) {
-        return field === "@id" ? doc.id : data[field];
+        return field === '@id' ? doc.id : data[field];
       };
     } else if (args[0] instanceof Function) {
       var customSelector = args[0];
       selector = function selector(mappedObj, data, doc) {
         return customSelector(data, doc);
       };
-    } else if (typeof args[0] === "string") {
+    } else if (typeof args[0] === 'string') {
       var fields = args;
       selector = function selector(mappedObj, data, doc) {
         fields.forEach(function (field) {
-          return mappedObj[field] = field === "@id" ? doc.id : data[field];
+          return mappedObj[field] = field === '@id' ? doc.id : data[field];
         });
         return mappedObj;
       };
@@ -439,7 +442,7 @@ function create(queryable, collection) {
       var pairs = Object.entries(args[0]);
       selector = function selector(mappedObj, data, doc) {
         pairs.forEach(function (pair) {
-          return mappedObj[pair[1]] = pair[0] === "@id" ? doc.id : data[pair[0]];
+          return mappedObj[pair[1]] = pair[0] === '@id' ? doc.id : data[pair[0]];
         });
         return mappedObj;
       };
@@ -447,13 +450,13 @@ function create(queryable, collection) {
     return clone({
       select: [selector]
     });
-  }), _defineProperty(_query, "limit", function limit(count) {
+  }), _defineProperty(_query, 'limit', function limit(count) {
     return clone({ limit: count });
-  }), _defineProperty(_query, "first", function first() {
+  }), _defineProperty(_query, 'first', function first() {
     return this.limit(1).get().then(function (results) {
       return results[0];
     });
-  }), _defineProperty(_query, "where", function where() {
+  }), _defineProperty(_query, 'where', function where() {
     var newWhere = _where.slice();
 
     for (var _len4 = arguments.length, conditions = Array(_len4), _key4 = 0; _key4 < _len4; _key4++) {
@@ -466,11 +469,11 @@ function create(queryable, collection) {
     return clone({
       where: newWhere
     });
-  }), _defineProperty(_query, "orderBy", function orderBy(fields) {
+  }), _defineProperty(_query, 'orderBy', function orderBy(fields) {
     return clone({
       orderBy: Object.assign({}, _orderBy, fields)
     });
-  }), _defineProperty(_query, "get", function get() {
+  }), _defineProperty(_query, 'get', function get() {
     var _ref3 = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {},
         source = _ref3.source;
 
@@ -478,13 +481,13 @@ function create(queryable, collection) {
       return queryable.get(source);
     });
     return lastGet = Promise.all(promises).then(processResults);
-  }), _defineProperty(_query, "data", function data(options) {
+  }), _defineProperty(_query, 'data', function data(options) {
     return this.get(options).then(function (results) {
       return results.map(function (x) {
         return x.data();
       });
     });
-  }), _defineProperty(_query, "next", function next() {
+  }), _defineProperty(_query, 'next', function next() {
     var options = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {};
     var source = options.source;
 
@@ -500,7 +503,7 @@ function create(queryable, collection) {
       });
     }
     return this.get(options);
-  }), _defineProperty(_query, "set", function set(docsOrData, applyToResultSet) {
+  }), _defineProperty(_query, 'set', function set(docsOrData, applyToResultSet) {
     if (applyToResultSet) {
       return modify(this.get(), function (batch, doc) {
         return batch.set(doc.ref, docsOrData);
@@ -511,7 +514,7 @@ function create(queryable, collection) {
     }), function (batch, doc) {
       return batch.set(doc, docsOrData[doc.id]);
     });
-  }), _defineProperty(_query, "update", function update(docsOrData, applyToResultSet) {
+  }), _defineProperty(_query, 'update', function update(docsOrData, applyToResultSet) {
     if (applyToResultSet) {
       return modify(this.get(), function (batch, doc) {
         return batch.update(doc.ref, docsOrData);
@@ -522,7 +525,7 @@ function create(queryable, collection) {
     }), function (batch, doc) {
       return batch.update(doc, docsOrData[doc.id]);
     });
-  }), _defineProperty(_query, "remove", function remove() {
+  }), _defineProperty(_query, 'remove', function remove() {
     return modify(this.get(), function (batch, doc) {
       return batch.delete(doc.ref);
     });
