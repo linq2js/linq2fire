@@ -1,4 +1,4 @@
-const keyRegex = /^\s*([^^<>=\s]+)\s*(<>|<|>|<=|>=|==|=|\^=|array_contains)?\s*$/;
+const keyRegex = /^\s*([^^<>=\s]+)\s*(<>|<|>|<=|>=|==|=|\^=|array-contains)?\s*$/;
 const specialFields = {
   "@id": "__name__"
 };
