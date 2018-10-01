@@ -160,10 +160,15 @@ interface IQuery<T> {
      * remove all documents which is satisfied query condition
      */
     remove(): IQuery<T>;
+
+    /**
+     * create new query from collection. queryable must be firestore object
+     */
+    from<U>(collection: string): IQuery<U>;
 }
 
 interface IQueryCreator {
-    <T>(queryable: any): IQuery<T>;
+    <T>(queryable: T): IQuery<T>;
 
     <T>(firestore: any, collectionName: string): IQuery<T>;
 }
