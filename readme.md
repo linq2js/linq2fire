@@ -1,6 +1,6 @@
 # Linq2Fire
 
-Supports special operators: IN, OR, !=, startsWith (^=) and many more
+Supports special operators: IN, OR, !=, startsWith (^=), array-contains (has) and many more
 
 ```js
 import linq from 'linq2fire';

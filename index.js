@@ -127,7 +127,7 @@ const parseCondition = condition => {
         });
       }
 
-      result.push({
+      children.length && result.push({
         type: 'or',
         children: children.map(child => ({
           type: 'and',

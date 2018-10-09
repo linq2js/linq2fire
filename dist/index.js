@@ -146,7 +146,7 @@ var parseCondition = function parseCondition(condition) {
         });
       }
 
-      result.push({
+      children.length && result.push({
         type: 'or',
         children: children.map(function (child) {
           return {
