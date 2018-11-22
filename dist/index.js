@@ -133,6 +133,8 @@ var findAllPossibles = function findAllPossibles(root) {
 };
 
 var parseCondition = function parseCondition(condition) {
+  var context = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {};
+
   var result = [];
   Object.keys(condition).forEach(function (key) {
     var value = condition[key];
@@ -151,7 +153,7 @@ var parseCondition = function parseCondition(condition) {
         children: children.map(function (child) {
           return {
             type: "and",
-            children: parseCondition(child)
+            children: parseCondition(child, context)
           };
         })
       });
@@ -195,6 +197,23 @@ var parseCondition = function parseCondition(condition) {
             children: value.map(function (value) {
               return { field: field, type: op, value: value };
             })
+          });
+        } else if (op === "array-contains") {
+          result.push({
+            type: "or",
+            children: value.map(function (value) {
+              return {
+                type: "array-contains",
+                field: field,
+                value: value
+              };
+            })
+          });
+          context.postFilters.push(function (doc) {
+            var fieldValue = doc.data()[field];
+            return value.every(function (value) {
+              return fieldValue.includes(value);
+            });
           });
         } else {
           throw new Error("Unsupported " + op + " for Array");
@@ -244,6 +263,7 @@ function create(queryable, collection) {
   var select = [];
   var _pipe = [];
   var _map = [];
+  var postFilters = [];
 
   function processResults(results) {
     var docs = {};
@@ -255,6 +275,9 @@ function create(queryable, collection) {
       if (!result) return;
       result.forEach(function (doc) {
         if (limit && count >= limit) return;
+        if (postFilters.length && postFilters.some(function (filter) {
+          return !filter(doc);
+        })) return;
         if (!(doc.id in docs)) {
           count++;
         }
@@ -375,7 +398,8 @@ function create(queryable, collection) {
       startAt: startAt,
       select: select,
       pipe: _pipe,
-      map: _map
+      map: _map,
+      postFilters: postFilters
     }, overwriteData));
   }
 
@@ -387,6 +411,7 @@ function create(queryable, collection) {
     select = data.select;
     _pipe = data.pipe;
     _map = data.map;
+    postFilters = data.postFilters;
     return this;
   }), _defineProperty(_query, "pipe", function pipe() {
     for (var _len = arguments.length, funcs = Array(_len), _key = 0; _key < _len; _key++) {
@@ -475,16 +500,20 @@ function create(queryable, collection) {
     });
   }), _defineProperty(_query, "where", function where() {
     var newWhere = _where.slice();
+    var context = {
+      postFilters: postFilters.slice()
+    };
 
     for (var _len4 = arguments.length, conditions = Array(_len4), _key4 = 0; _key4 < _len4; _key4++) {
       conditions[_key4] = arguments[_key4];
     }
 
     conditions.forEach(function (condition) {
-      return newWhere.push.apply(newWhere, _toConsumableArray(parseCondition(condition)));
+      return newWhere.push.apply(newWhere, _toConsumableArray(parseCondition(condition, context)));
     });
     return clone({
-      where: newWhere
+      where: newWhere,
+      postFilters: context.postFilters
     });
   }), _defineProperty(_query, "orderBy", function orderBy(fields) {
     return clone({

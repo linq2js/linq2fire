@@ -113,7 +113,7 @@ const findAllPossibles = root => {
   return result;
 };
 
-const parseCondition = condition => {
+const parseCondition = (condition, context = {}) => {
   const result = [];
   Object.keys(condition).forEach(key => {
     let value = condition[key];
@@ -128,13 +128,13 @@ const parseCondition = condition => {
       }
 
       children.length &&
-        result.push({
-          type: "or",
-          children: children.map(child => ({
-            type: "and",
-            children: parseCondition(child)
-          }))
-        });
+      result.push({
+        type: "or",
+        children: children.map(child => ({
+          type: "and",
+          children: parseCondition(child, context)
+        }))
+      });
     } else {
       // parse normal criteria
       let [, field, op = "=="] = keyRegex.exec(key) || [];
@@ -169,6 +169,19 @@ const parseCondition = condition => {
           result.push({
             type: "or",
             children: value.map(value => ({ field, type: op, value }))
+          });
+        } else if (op === "array-contains") {
+          result.push({
+            type: "or",
+            children: value.map(value => ({
+              type: "array-contains",
+              field,
+              value
+            }))
+          });
+          context.postFilters.push(doc => {
+            const fieldValue = doc.data()[field];
+            return value.every(value => fieldValue.includes(value));
           });
         } else {
           throw new Error("Unsupported " + op + " for Array");
@@ -219,17 +232,20 @@ export default function create(queryable, collection) {
   let select = [];
   let pipe = [];
   let map = [];
+  let postFilters = [];
 
   function processResults(results) {
     const docs = {};
     let count = 0;
-    lastDocs = results.map(
-      result => (result ? result.docs[result.docs.length - 1] : undefined)
+    lastDocs = results.map(result =>
+      result ? result.docs[result.docs.length - 1] : undefined
     );
     results.some(result => {
       if (!result) return;
       result.forEach(doc => {
         if (limit && count >= limit) return;
+        if (postFilters.length && postFilters.some(filter => !filter(doc)))
+          return;
         if (!(doc.id in docs)) {
           count++;
         }
@@ -252,11 +268,8 @@ export default function create(queryable, collection) {
     if (map.length) {
       result = map.reduce(
         (result, mapper) =>
-          result.map(
-            (item, index) =>
-              typeof mapper === "function"
-                ? mapper(item, index)
-                : item[mapper]()
+          result.map((item, index) =>
+            typeof mapper === "function" ? mapper(item, index) : item[mapper]()
           ),
         result
       );
@@ -336,7 +349,8 @@ export default function create(queryable, collection) {
           startAt,
           select,
           pipe,
-          map
+          map,
+          postFilters
         },
         overwriteData
       )
@@ -352,6 +366,7 @@ export default function create(queryable, collection) {
       select = data.select;
       pipe = data.pipe;
       map = data.map;
+      postFilters = data.postFilters;
       return this;
     },
     pipe(...funcs) {
@@ -440,11 +455,15 @@ export default function create(queryable, collection) {
     },
     where(...conditions) {
       const newWhere = where.slice();
+      const context = {
+        postFilters: postFilters.slice()
+      };
       conditions.forEach(condition =>
-        newWhere.push(...parseCondition(condition))
+        newWhere.push(...parseCondition(condition, context))
       );
       return clone({
-        where: newWhere
+        where: newWhere,
+        postFilters: context.postFilters
       });
     },
     orderBy(fields) {

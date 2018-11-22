@@ -1,6 +1,6 @@
 {
   "name": "linq2fire",
-  "version": "1.0.21",
+  "version": "1.0.22",
   "description": "Zero dependency. Supports special operators: IN, OR, !=, startsWith (^=), array-contains and many more",
   "main": "./dist/index.js",
   "scripts": {
